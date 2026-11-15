@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -300,6 +301,27 @@ func (s *Server) hDatsImport(w http.ResponseWriter, r *http.Request) (any, error
 
 // ---------- BIOS ----------
 
+// biosExpected: nome file (minuscolo) → percorsi relativi a /userdata richiesti da
+// batocera-systems (tabella nel suo sorgente python). Vuoto se non leggibile.
+func (s *Server) biosExpected() map[string][]string {
+	out := map[string][]string{}
+	res, err := s.ssh.RunTimeout(`grep -oE '"file" *: *"[^"]+"' /usr/bin/batocera-systems 2>/dev/null | sed 's/.*: *"//; s/"$//'`, 30*time.Second)
+	if err != nil {
+		return out
+	}
+	seen := map[string]bool{}
+	for _, l := range strings.Split(res.Stdout, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		b := strings.ToLower(path.Base(l))
+		out[b] = append(out[b], l)
+	}
+	return out
+}
+
 func (s *Server) hBiosUpload(w http.ResponseWriter, r *http.Request) (any, error) {
 	var req struct {
 		Paths     []string `json:"paths"`
@@ -332,10 +354,33 @@ func (s *Server) hBiosUpload(w http.ResponseWriter, r *http.Request) (any, error
 		if len(files) == 0 {
 			return nil, errors.New("nessun file")
 		}
+		// Percorsi attesi da batocera-systems (relativi a /userdata): non tutto sta in
+		// bios/, es. saves/dolphin-emu/Triforce/segaboot.gcm. Un file con quel nome va lì.
+		expected := s.biosExpected()
+		type target struct{ local, dest string }
+		var targets []target
+		for _, f := range files {
+			base := strings.ToLower(path.Base(f.rel))
+			dests := expected[base]
+			if len(dests) == 0 {
+				targets = append(targets, target{f.local, s.cfg.BiosPath + "/" + f.rel})
+				continue
+			}
+			for _, d := range dests {
+				targets = append(targets, target{f.local, "/userdata/" + d})
+				if !strings.HasPrefix(d, "bios/") {
+					j.Logf("%s → /userdata/%s (percorso richiesto da batocera-systems)", f.rel, d)
+				}
+			}
+		}
+		files = nil
+		for _, t := range targets {
+			files = append(files, file{t.local, t.dest})
+		}
 		// dimensioni già presenti
 		var cmds []string
 		for _, f := range files {
-			cmds = append(cmds, "stat -c '%s' "+cab.ShellQuote(s.cfg.BiosPath+"/"+f.rel)+" 2>/dev/null || echo -")
+			cmds = append(cmds, "stat -c '%s' "+cab.ShellQuote(f.rel)+" 2>/dev/null || echo -")
 		}
 		res, err := s.ssh.RunTimeout(strings.Join(cmds, "\n"), 2*time.Minute)
 		if err != nil {
@@ -358,7 +403,8 @@ func (s *Server) hBiosUpload(w http.ResponseWriter, r *http.Request) (any, error
 				continue
 			}
 			j.SetProgress(float64(i)/float64(len(files)), f.rel)
-			if err := cab.UploadWith(j.Context(), cl, f.local, s.cfg.BiosPath+"/"+f.rel, nil); err != nil {
+			_ = cl.MkdirAll(path.Dir(f.rel))
+			if err := cab.UploadWith(j.Context(), cl, f.local, f.rel, nil); err != nil {
 				j.Logf("✗ %s: %v", f.rel, err)
 				continue
 			}
