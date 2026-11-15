@@ -24,7 +24,7 @@ exit 0
 
 func (s *Server) hWinekeys(w http.ResponseWriter, r *http.Request) (any, error) {
 	if r.Method != http.MethodPost {
-		res, err := s.ssh.RunTimeout("[ -f "+compDir+"/wine-keys.py ] && echo installed; pgrep -f \"[w]ine-keys.py\" >/dev/null && echo running; cat "+compDir+"/wine-keys.json 2>/dev/null", 30*time.Second)
+		res, err := s.ssh.RunTimeout("[ -f "+compDir+"/wine-keys.py ] && echo installed; pgrep -f \"python3 [^ ]*wine-keys.py\" >/dev/null && echo running; cat "+compDir+"/wine-keys.json 2>/dev/null", 30*time.Second)
 		if err != nil {
 			return nil, err
 		}

@@ -472,7 +472,7 @@ for f in sorted(os.listdir(root)):
     p = os.path.join(root, f)
     if not os.path.isfile(p): continue
     ext = os.path.splitext(f)[1].lower()
-    if ext not in (".cue",".chd",".iso",".img",".gdi",".cdi",".pbp",".bin",".mds"): continue
+    if ext not in (".cue",".chd",".iso",".gdi",".cdi",".pbp",".mds"): continue
     m = rx.match(os.path.splitext(f)[0])
     if not m: continue
     key = (m.group(1).strip() + m.group(3).strip(), ext)

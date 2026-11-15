@@ -22,7 +22,6 @@ const buaRepo = "batocera-unofficial-addons/batocera-unofficial-addons"
 const buaBase = "export TERM=dumb; curl -Ls https://github.com/batocera-unofficial-addons/batocera-unofficial-addons/raw/refs/heads/main/app/install_x86.sh | bash 2>&1"
 
 var buaRecommended = map[string]string{"chiaki": "Giochi", "chiaki-ng": "Giochi", "moonlight": "Giochi", "steam": "Giochi", "heroic": "Giochi", "fightcade": "Giochi", "tailscale": "Rete", "sunshine": "Rete", "sdlpop": "Giochi", "dolphin": "Emulatori", "ryujinx": "Emulatori", "xemu": "Emulatori"}
-var buaCategory = map[string]string{"chiaki": "PS5 / streaming", "chiaki-ng": "PS5 / streaming", "moonlight": "PC / streaming", "steam": "PC", "heroic": "PC", "fightcade": "Online", "tailscale": "Rete", "sunshine": "Rete", "wine": "PC"}
 
 type addonsCache struct {
 	mu  sync.Mutex
@@ -33,6 +32,11 @@ type addonsCache struct {
 
 var adCache addonsCache
 
+var reBuaApp = regexp.MustCompile(`\["([A-Za-z0-9_\-]+)"\]="(curl[^"]+)"`)
+var reBuaDesc = regexp.MustCompile(`\["([A-Za-z0-9_\-]+)"\]="([^"]*)"`)
+var reBuaCat = regexp.MustCompile(`\["([^"]+)"\]="([A-Z0-9_\- ]+)"`)
+
+// buaList legge la tabella delle app dallo script ufficiale di BUA (niente API GitHub, niente limiti).
 func (s *Server) buaList() ([]map[string]any, error) {
 	adCache.mu.Lock()
 	if adCache.bua != nil && time.Since(adCache.at) < 6*time.Hour {
@@ -41,37 +45,58 @@ func (s *Server) buaList() ([]map[string]any, error) {
 		return l, nil
 	}
 	adCache.mu.Unlock()
-	req, _ := http.NewRequest("GET", "https://api.github.com/repos/"+buaRepo+"/contents/", nil)
+	req, _ := http.NewRequest("GET", "https://raw.githubusercontent.com/"+buaRepo+"/main/app/batocera-unofficial-addons.sh", nil)
 	req.Header.Set("User-Agent", "BatoceraCompanion")
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 403 {
-		return nil, errors.New("limite dell'API GitHub (60 richieste/ora per IP): riprova tra un'ora")
-	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("GitHub: HTTP %d", resp.StatusCode)
 	}
 	b, _ := io.ReadAll(resp.Body)
-	var ents []struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
+	txt := string(b)
+	sect := func(name string) string {
+		i := strings.Index(txt, name+"=(")
+		if i < 0 {
+			return ""
+		}
+		j := strings.Index(txt[i:], "\n)")
+		if j < 0 {
+			return txt[i:]
+		}
+		return txt[i : i+j]
 	}
-	if err := json.Unmarshal(b, &ents); err != nil {
-		return nil, err
+	cmds := map[string]string{}
+	for _, m := range reBuaApp.FindAllStringSubmatch(sect("apps"), -1) {
+		cmds[m[1]] = m[2]
+	}
+	descs := map[string]string{}
+	for _, m := range reBuaDesc.FindAllStringSubmatch(sect("descriptions"), -1) {
+		descs[m[1]] = m[2]
+	}
+	cats := map[string]string{}
+	for _, m := range reBuaCat.FindAllStringSubmatch(sect("categories"), -1) {
+		for _, a := range strings.Fields(m[2]) {
+			cats[a] = m[1]
+		}
+	}
+	if len(cmds) == 0 {
+		return nil, errors.New("elenco BUA non leggibile")
 	}
 	var out []map[string]any
-	for _, e := range ents {
-		if e.Type != "dir" || strings.HasPrefix(e.Name, ".") || e.Name == "app" || e.Name == "images" || e.Name == "docs" || e.Name == "lib" {
-			continue
-		}
-		cat := buaCategory[e.Name]
+	for name, cmd := range cmds {
+		cat := cats[name]
 		if cat == "" {
 			cat = "Altro"
 		}
-		out = append(out, map[string]any{"name": e.Name, "source": "bua", "category": cat, "description": "", "recommended": buaRecommended[e.Name] != "", "url": "https://github.com/" + buaRepo + "/blob/main/" + e.Name + "/" + e.Name + ".sh", "version": ""})
+		url := ""
+		if m := regexp.MustCompile(`https://\S+`).FindString(cmd); m != "" {
+			url = m
+		}
+		low := strings.ToLower(name)
+		out = append(out, map[string]any{"name": low, "label": name, "source": "bua", "category": cat, "description": descs[name], "recommended": buaRecommended[low] != "", "url": url, "cmd": cmd, "version": ""})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["name"].(string) < out[j]["name"].(string) })
 	adCache.mu.Lock()
@@ -173,7 +198,17 @@ func (s *Server) hAddonsAction(w http.ResponseWriter, r *http.Request) (any, err
 		switch req.Source + "/" + req.Action {
 		case "bua/install":
 			j.SetProgress(-1, "Scarico ed eseguo lo script (serve internet sul cabinato)")
-			cmd = fmt.Sprintf("export TERM=dumb; [ -d /userdata/system/add-ons ] || (%s); curl -Ls https://github.com/%s/raw/refs/heads/main/%s/%s.sh | bash 2>&1 | tail -80", buaBase, buaRepo, req.Name, req.Name)
+			list, _ := s.buaList()
+			inst := ""
+			for _, a := range list {
+				if a["name"] == strings.ToLower(req.Name) {
+					inst, _ = a["cmd"].(string)
+				}
+			}
+			if inst == "" {
+				return nil, fmt.Errorf("add-on %s non trovato nell'elenco BUA", req.Name)
+			}
+			cmd = fmt.Sprintf("export TERM=dumb; [ -d /userdata/system/add-ons ] || (%s); %s 2>&1 | tail -80", buaBase, inst)
 		case "bua/remove":
 			cmd = fmt.Sprintf("rm -rf /userdata/system/add-ons/%[1]s /userdata/roms/ports/%[1]s.sh /userdata/roms/ports/%[1]s /userdata/roms/ports/images/%[1]s* /userdata/system/services/%[1]s 2>/dev/null; batocera-services disable %[1]s 2>/dev/null; echo rimosso", req.Name)
 		case "official/install":
