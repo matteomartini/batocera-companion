@@ -39,6 +39,7 @@
     <div class="conn" id="conn">
       <div class="dot" id="dot-ssh"></div><span>SSH</span>
       <div class="dot" id="dot-es"></div><span>EmulationStation</span>
+      <button class="btn sm" id="reconn-btn" onclick="reconnect()" title="Chiude la connessione e cerca di nuovo il cabinato" style="grid-column:1/-1;margin-top:6px">🔄 Cerca il cabinato</button>
     </div>
     <div class="side-foot"><span id="ver"></span></div>
   </aside>
@@ -49,7 +50,7 @@
     <section data-view="dash" class="view active">
       <header><h1>Dashboard</h1><div class="hint" id="dash-host"></div></header>
       <div class="cards">
-        <div class="card stat"><div class="k">Stato</div><div class="v" id="st-state">—</div><div class="s" id="st-run"></div></div>
+        <div class="card stat"><div class="k">Stato</div><div class="v" id="st-state">—</div><div class="s" id="st-run"></div><div class="s" id="st-reconn" hidden><button class="btn sm" onclick="reconnect()">🔄 Cerca il cabinato</button></div></div>
         <div class="card stat"><div class="k">Acceso da</div><div class="v" id="st-up">—</div><div class="s" id="st-ver"></div></div>
         <div class="card stat"><div class="k">Spazio libero</div><div class="v" id="st-disk">—</div><div class="s"><div class="bar"><i id="st-diskbar"></i></div></div></div>
         <div class="card stat"><div class="k">CPU</div><div class="v" id="st-temp">—</div><div class="s" id="st-roms"></div></div>

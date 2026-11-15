@@ -72,11 +72,28 @@ async function refreshStatus() {
     $('#st-diskbar').style.width = (s.disk_pct || 0) + '%';
     $('#st-temp').textContent = s.temp_c ? s.temp_c.toFixed(0) + ' °C' : '—';
     $('#st-roms').textContent = s.rom_total ? s.rom_total + ' ROM' : '';
+    $('#st-reconn').hidden = !!s.ssh_online;
+    statusEvery(s.ssh_online ? 10000 : 4000); // spento: riprova più spesso
   } catch (e) {
     $('#dot-ssh').className = 'dot off'; $('#dot-es').className = 'dot off';
+    statusEvery(4000);
   }
 }
-refreshStatus(); setInterval(refreshStatus, 10000);
+let _statusTimer = null, _statusMs = 0;
+function statusEvery(ms) {
+  if (ms === _statusMs) return;
+  _statusMs = ms; clearInterval(_statusTimer); _statusTimer = setInterval(refreshStatus, ms);
+}
+refreshStatus(); statusEvery(10000);
+async function reconnect() {
+  const btns = $$('#reconn-btn, #st-reconn button'); btns.forEach(b => { b.disabled = true; b.textContent = '⏳ Cerco…'; });
+  try {
+    const r = await api('reconnect', {});
+    toast(r.ok ? 'Cabinato trovato' + (r.via_remote ? ' (via Tailscale)' : '') : (r.error || 'Non trovato'), r.ok ? 'ok' : 'err');
+  } catch (e) { toast(e.message, 'err'); }
+  btns.forEach(b => { b.disabled = false; b.textContent = '🔄 Cerca il cabinato'; });
+  refreshStatus();
+}
 let CAB_SYSTEMS = null; // tutti i sistemi definiti su Batocera (es_systems.cfg), anche le cartelle vuote
 api('info').then(i => { if (i && i.systems) { CAB_SYSTEMS = Object.keys(i.systems).sort(); } }).catch(() => {}).then(() => refreshStatus());
 

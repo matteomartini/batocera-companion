@@ -30,6 +30,8 @@ type SSH struct {
 	mu        sync.Mutex
 	client    *ssh.Client
 	viaRemote bool
+	dialing   bool      // single-flight: una sola connessione per volta
+	failAt    time.Time // ultimo tentativo fallito: breve backoff per non intasare
 	lastErr   string
 	sem       chan struct{}
 }
@@ -99,23 +101,51 @@ func (s *SSH) dial(host string, timeout time.Duration) (*ssh.Client, error) {
 // Client restituisce la connessione condivisa, aprendola se serve.
 func (s *SSH) Client() (*ssh.Client, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.client != nil {
-		return s.client, nil
+	for {
+		if s.client != nil {
+			c := s.client
+			s.mu.Unlock()
+			return c, nil
+		}
+		if s.Host == "" {
+			s.mu.Unlock()
+			return nil, errors.New("indirizzo del cabinato non impostato (Impostazioni)")
+		}
+		// backoff: dopo un fallimento, per 3 s rispondi subito con l'ultimo errore
+		if s.lastErr != "" && time.Since(s.failAt) < 3*time.Second {
+			e := s.lastErr
+			s.mu.Unlock()
+			return nil, errors.New(e)
+		}
+		if !s.dialing {
+			break
+		}
+		// qualcun altro sta già connettendo: aspetta che finisca
+		s.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+		s.mu.Lock()
 	}
-	if s.Host == "" {
-		return nil, errors.New("indirizzo del cabinato non impostato (Impostazioni)")
-	}
-	c, err := s.dial(s.Host, 4*time.Second)
+	s.dialing = true
+	host, remote := s.Host, s.RemoteHost
+	s.mu.Unlock()
+
+	c, err := s.dial(host, 4*time.Second)
 	via := false
-	if err != nil && s.RemoteHost != "" {
-		if c2, err2 := s.dial(s.RemoteHost, 8*time.Second); err2 == nil {
+	if err != nil && remote != "" {
+		if c2, err2 := s.dial(remote, 8*time.Second); err2 == nil {
 			c, err, via = c2, nil, true
 		}
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dialing = false
 	if err != nil {
-		s.lastErr = humanErr(err)
+		s.lastErr, s.failAt = humanErr(err), time.Now()
 		return nil, errors.New(s.lastErr)
+	}
+	if s.client != nil { // nel frattempo qualcuno ha riconfigurato e connesso
+		c.Close()
+		return s.client, nil
 	}
 	s.client, s.viaRemote, s.lastErr = c, via, ""
 	go func(c *ssh.Client) {
@@ -131,6 +161,33 @@ func (s *SSH) Client() (*ssh.Client, error) {
 	return c, nil
 }
 
+// probe: keepalive con timeout. Un cabinato spento di colpo lascia la TCP
+// "aperta" per minuti; senza timeout la richiesta resterebbe appesa.
+func probe(c *ssh.Client, timeout time.Duration) bool {
+	ch := make(chan error, 1)
+	go func() { _, _, err := c.SendRequest("keepalive@openssh.com", true, nil); ch <- err }()
+	select {
+	case err := <-ch:
+		return err == nil
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// Reconnect chiude la connessione attuale (se c'è) e azzera il backoff:
+// il prossimo comando riconnette subito.
+func (s *SSH) Reconnect() {
+	s.mu.Lock()
+	c := s.client
+	s.client = nil
+	s.lastErr = ""
+	s.failAt = time.Time{}
+	s.mu.Unlock()
+	if c != nil {
+		c.Close()
+	}
+}
+
 func (s *SSH) keepalive(c *ssh.Client) {
 	t := time.NewTicker(20 * time.Second)
 	defer t.Stop()
@@ -141,7 +198,7 @@ func (s *SSH) keepalive(c *ssh.Client) {
 		if cur != c {
 			return
 		}
-		if _, _, err := c.SendRequest("keepalive@openssh.com", true, nil); err != nil {
+		if !probe(c, 6*time.Second) {
 			c.Close()
 			return
 		}
@@ -195,6 +252,16 @@ func (s *SSH) RunCtx(ctx context.Context, cmd string, timeout time.Duration) (*R
 		}
 		lastErr = err
 		if !isConnErr(err) {
+			if ctx.Err() == nil && !probe(c, 3*time.Second) {
+				// comando scaduto e connessione muta: il cabinato è sparito
+				s.mu.Lock()
+				if s.client == c {
+					s.client = nil
+				}
+				s.mu.Unlock()
+				c.Close()
+				return nil, errors.New("il cabinato non risponde più (spento o riavviato)")
+			}
 			return nil, err
 		}
 		s.mu.Lock()

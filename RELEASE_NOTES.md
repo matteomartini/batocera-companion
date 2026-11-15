@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.17.2
+- Pulsante **Cerca il cabinato** (barra laterale e Dashboard) per riconnettersi subito; con il cabinato spento lo stato viene ricontrollato ogni 4 s. Un cabinato spento di colpo viene rilevato entro ~25 s (prima la connessione morta restava appesa per minuti).
+
 1.17.1
 - Test prestazioni in modalità **benchmark**: RetroArch (`--max-frames`, vsync/audio sbloccati) e MAME (`-bench`) danno la velocità esatta rispetto al tempo reale; misura in gioco per gli emulatori senza benchmark (Dolphin, PCSX2, Flycast…) o a richiesta.
 

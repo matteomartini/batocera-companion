@@ -182,6 +182,7 @@ func (s *Server) Handler(local bool) http.Handler {
 	api("romlib/fix", s.hRomlibFix)
 	api("stutter", s.hStutter)
 	api("stress", s.hStress)
+	api("reconnect", s.hReconnect)
 	api("perf", s.hPerf)
 	api("perf/games", s.hPerfGames)
 	api("emu", s.hEmu)
@@ -675,4 +676,15 @@ func (s *Server) hMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(b)
+}
+
+// hReconnect: "Cerca il cabinato": chiude la connessione SSH e riprova subito.
+func (s *Server) hReconnect(w http.ResponseWriter, r *http.Request) (any, error) {
+	s.ssh.Reconnect()
+	s.invalidateInfo()
+	_, err := s.ssh.RunTimeout("true", 15*time.Second)
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}, nil
+	}
+	return map[string]any{"ok": true, "via_remote": s.ssh.ViaRemote()}, nil
 }
