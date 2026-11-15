@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.17.1
+- Test prestazioni in modalità **benchmark**: RetroArch (`--max-frames`, vsync/audio sbloccati) e MAME (`-bench`) danno la velocità esatta rispetto al tempo reale; misura in gioco per gli emulatori senza benchmark (Dolphin, PCSX2, Flycast…) o a richiesta.
+
 1.17.0
 - Nuova scheda **Test**: stress test temperature (CPU al 100% per N minuti, curva temperatura/frequenza, prove salvate e sovrapposte nel grafico: senza/con ventola) e test prestazioni emulatore (avvia un gioco, misura core più carico, emulatore, GPU e temperatura, verdetto e consigli; opzionale confronto A/B con le impostazioni consigliate, batocera.conf ripristinato alla fine).
 

@@ -295,6 +295,7 @@ func (s *Server) hPerf(w http.ResponseWriter, r *http.Request) (any, error) {
 		Name    string `json:"name"`
 		Seconds int    `json:"seconds"`
 		Compare bool   `json:"compare"` // seconda prova con le impostazioni consigliate
+		Live    bool   `json:"live"`    // misura in gioco invece del benchmark
 		Delete  string `json:"delete"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -358,10 +359,72 @@ func (s *Server) hPerf(w http.ResponseWriter, r *http.Request) (any, error) {
 			}
 			return res, nil
 		}
+		bench := func(label string) (map[string]any, error) {
+			if req.Live {
+				return one(label)
+			}
+			j.SetProgress(-1, label+": avvio "+req.Name+" per leggere la configurazione")
+			if err := s.es.Launch(req.Path); err != nil {
+				return nil, fmt.Errorf("avvio: %v", err)
+			}
+			for i := 0; i < 6; i++ {
+				time.Sleep(time.Second)
+				if j.Cancelled() {
+					_ = s.es.EmuKill()
+					return nil, errors.New("annullato")
+				}
+			}
+			_ = s.es.EmuKill()
+			time.Sleep(2 * time.Second)
+			script, err := s.asset("bc_bench.py")
+			if err != nil {
+				return nil, err
+			}
+			if err := s.ssh.UploadBytes("/tmp/bc_bench.py", script, 0o755); err != nil {
+				return nil, err
+			}
+			frames := req.Seconds * 60
+			j.SetProgress(-1, label+": benchmark in corso ("+strconv.Itoa(req.Seconds)+" s di gioco alla massima velocità)")
+			res, err := s.ssh.RunCtx(j.Context(), "python3 /tmp/bc_bench.py "+strconv.Itoa(frames)+" "+strconv.Itoa(req.Seconds)+" 2>/tmp/bc_bench.err", time.Duration(req.Seconds*12+200)*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			var out map[string]any
+			line := strings.TrimSpace(res.Stdout)
+			if i := strings.LastIndex(line, "\n"); i >= 0 {
+				line = line[i+1:]
+			}
+			if json.Unmarshal([]byte(line), &out) != nil {
+				return nil, fmt.Errorf("benchmark: risposta non valida: %s %s", res.Stdout, res.Stderr)
+			}
+			if e, ok := out["error"].(string); ok && e != "" {
+				j.Logf("benchmark non disponibile (%s): misuro in gioco", e)
+				return one(label)
+			}
+			if out["mode"] == "none" {
+				j.Logf("%v non ha una modalità benchmark: misuro in gioco", out["exe"])
+				return one(label)
+			}
+			temp, _ := s.ssh.RunTimeout("m=0; for z in /sys/class/thermal/thermal_zone*; do v=$(cat $z/temp 2>/dev/null); [ \"${v:-0}\" -gt \"$m\" ] && m=$v; done; echo $((m/1000))", 10*time.Second)
+			t := 0
+			if temp != nil {
+				t, _ = strconv.Atoi(strings.TrimSpace(temp.Stdout))
+			}
+			speed, _ := out["speed"].(float64)
+			r := map[string]any{"label": label, "bench": true, "mode": out["mode"], "speed": speed, "temp_max": t, "secs": out["secs"], "cmd": out["cmd"]}
+			if f, ok := out["fps"]; ok {
+				r["fps"] = f
+			}
+			j.Logf("%s: %.2f× il tempo reale (%s)", label, speed, out["mode"])
+			return r, nil
+		}
 		// impostazioni attuali del sistema
 		cur, _ := s.ssh.RunTimeout("grep -E '^"+sys+"\\.' /userdata/system/batocera.conf | grep -v '\\['", 20*time.Second)
-		curConf := strings.TrimSpace(cur.Stdout)
-		a, err := one("impostazioni attuali")
+		curConf := ""
+		if cur != nil {
+			curConf = strings.TrimSpace(cur.Stdout)
+		}
+		a, err := bench("impostazioni attuali")
 		if err != nil {
 			return nil, err
 		}
@@ -385,7 +448,7 @@ func (s *Server) hPerf(w http.ResponseWriter, r *http.Request) (any, error) {
 			restore := func() {
 				_, _ = s.ssh.RunTimeout("cat /tmp/bc_perf_backup.conf > /userdata/system/batocera.conf && rm -f /tmp/bc_perf_backup.conf", 20*time.Second)
 			}
-			b, err := one("impostazioni consigliate")
+			b, err := bench("impostazioni consigliate")
 			restore()
 			if err != nil {
 				return nil, err
@@ -404,7 +467,17 @@ func (s *Server) hPerf(w http.ResponseWriter, r *http.Request) (any, error) {
 			"system": sys, "game": req.Name, "path": req.Path, "seconds": req.Seconds,
 			"results": results, "verdict": verdict, "tips": tips,
 		}
-		if len(results) == 2 {
+		if len(results) == 2 && results[0]["bench"] == true && results[1]["bench"] == true {
+			sa, sb := results[0]["speed"].(float64), results[1]["speed"].(float64)
+			switch {
+			case sb >= sa*1.15:
+				run["compare_note"] = fmt.Sprintf("Con le impostazioni consigliate la velocità passa da %.2f× a %.2f×: conviene applicarle dalla scheda Emulatori.", sa, sb)
+			case sb <= sa*0.87:
+				run["compare_note"] = fmt.Sprintf("Con le consigliate la velocità scende da %.2f× a %.2f× (run-ahead o seconda istanza costano): tieni le attuali o disattiva il run-ahead.", sa, sb)
+			default:
+				run["compare_note"] = fmt.Sprintf("Nessuna differenza rilevante tra attuali (%.2f×) e consigliate (%.2f×) su questo gioco.", sa, sb)
+			}
+		} else if len(results) == 2 {
 			da := results[0]["core_avg"].(int) - results[1]["core_avg"].(int)
 			switch {
 			case da >= 8:
@@ -423,6 +496,9 @@ func (s *Server) hPerf(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func perfVerdict(sys string, a map[string]any, es *cab.ES) (string, []string) {
+	if a["bench"] == true {
+		return benchVerdict(sys, a)
+	}
 	core := a["core_avg"].(int)
 	emu := a["emu_avg"].(int)
 	temp := a["temp_max"].(int)
@@ -509,4 +585,51 @@ func (s *Server) hPerfGames(w http.ResponseWriter, r *http.Request) (any, error)
 	}
 	sort.Slice(out, func(i, k int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[k].Name) })
 	return map[string]any{"games": out}, nil
+}
+
+func benchVerdict(sys string, a map[string]any) (string, []string) {
+	speed, _ := a["speed"].(float64)
+	temp, _ := a["temp_max"].(int)
+	var tips []string
+	var verdict string
+	switch {
+	case speed >= 1.8:
+		verdict = fmt.Sprintf("✅ %.2f× il tempo reale: margine ampio, puoi permetterti impostazioni più pesanti.", speed)
+		if is2D(sys) {
+			tips = append(tips, "Puoi tenere run-ahead 1 con seconda istanza e uno shader CRT leggero (crt-pi, zfast).")
+		} else {
+			tips = append(tips, "Puoi provare la risoluzione interna 2x o uno shader leggero.")
+		}
+	case speed >= 1.15:
+		verdict = fmt.Sprintf("⚠️ %.2f× il tempo reale: regge i 60 fps ma con poco margine, le scene pesanti possono scattare.", speed)
+		if is2D(sys) {
+			tips = append(tips, "Run-ahead 1 senza seconda istanza; niente shader pesanti.")
+		} else {
+			tips = append(tips, "Run-ahead spento, risoluzione interna 1x, niente shader.")
+		}
+	default:
+		verdict = fmt.Sprintf("❌ %.2f× il tempo reale: non arriva a 60 fps, il gioco scatta per forza.", speed)
+		if is2D(sys) {
+			tips = append(tips, "Run-ahead 0 e seconda istanza spenta.")
+			if sys == "mame" {
+				tips = append(tips, "Core più leggero per questo gioco (mame2003_plus o fbneo) dalla scheda Giochi → core per gioco.")
+			}
+		} else {
+			tips = append(tips, "Run-ahead e rewind spenti, risoluzione interna 1x.")
+			switch sys {
+			case "psx":
+				tips = append(tips, "Core pcsx_rearmed (più leggero di beetle-psx/duckstation).")
+			case "n64":
+				tips = append(tips, "Core mupen64plus-next a 320x240, o parallel-n64.")
+			case "saturn":
+				tips = append(tips, "Core yabasanshiro invece di beetle-saturn.")
+			}
+		}
+		tips = append(tips, "Shader: nessuno; cornice (bezel) spenta.")
+	}
+	if temp >= 90 {
+		verdict += fmt.Sprintf(" Temperatura %d °C: throttling.", temp)
+		tips = append(tips, "Il mini PC scalda troppo: ventola/aria nel retro (vedi stress test).")
+	}
+	return verdict, tips
 }

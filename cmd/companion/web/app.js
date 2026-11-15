@@ -1384,7 +1384,11 @@ function pfRender(runs) {
   $('#pf-out').innerHTML = runs.slice().reverse().map(r => `<div class="finding ${r.verdict.startsWith('❌') ? 'error' : r.verdict.startsWith('⚠') ? 'warn' : 'ok'}"><i></i><div class="body">
       <span class="t">${esc(r.game)}</span> <span class="muted">${esc(r.system)} · ${r.seconds}s · ${new Date(r.at).toLocaleString()}</span>
       <div class="d">${esc(r.verdict)}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:8px">${(r.results || []).map(x => `<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px"><b>${esc(x.label)}</b>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:8px">${(r.results || []).map(x => x.bench ? `<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px"><b>${esc(x.label)}</b>
+        <div style="margin-top:6px;font-size:26px;font-weight:700;color:${x.speed >= 1.8 ? 'var(--ok)' : x.speed >= 1.15 ? 'var(--warn)' : 'var(--err)'}">${Number(x.speed).toFixed(2)}×</div>
+        <div class="muted">velocità rispetto al tempo reale${x.fps ? ' · ' + x.fps + ' fps' : ''} · ${x.mode === 'mame' ? 'MAME -bench' : 'RetroArch'} ${x.secs ? x.secs + ' s' : ''} · ${x.temp_max} °C</div>
+        <div class="bar" style="height:8px;margin-top:4px"><i style="width:${Math.min(100, x.speed / 4 * 100)}%;background:${x.speed >= 1.8 ? 'var(--ok)' : x.speed >= 1.15 ? 'var(--warn)' : 'var(--err)'}"></i></div>
+        ${x.conf !== undefined ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">impostazioni</summary><pre class="log" style="max-height:90px">${esc(x.conf) || '(nessuna: valori globali)'}</pre></details>` : ''}</div>` : `<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px"><b>${esc(x.label)}</b>
         <div style="margin-top:6px">Core più carico <b style="color:${col(x.core_avg)}">${x.core_avg}%</b> <span class="muted">(picco ${x.core_max}%)</span>${bar(x.core_avg, 100, col(x.core_avg))}</div>
         <div style="margin-top:6px">Emulatore ${x.emu_avg}% di ${x.ncpu} core · CPU totale ${x.cpu_avg}% · ${x.mhz_avg} MHz</div>
         <div>GPU ${x.gpu_avg}${x.gpu_max ? '/' + x.gpu_max : ''} MHz · max ${x.temp_max} °C</div>
@@ -1399,7 +1403,7 @@ async function pfRun() {
   if (!sys || !path) return toast('Scegli sistema e gioco', 'err');
   $('#pf-job').hidden = false; $('#pf-run').disabled = true; $('#pf-stop').hidden = false;
   try {
-    const r = await api('perf', {system: sys, path, name, seconds: +$('#pf-sec').value, compare: $('#pf-cmp').checked});
+    const r = await api('perf', {system: sys, path, name, seconds: +$('#pf-sec').value, compare: $('#pf-cmp').checked, live: $('#pf-live').checked});
     pfJob = r.job;
     const res = await pollJob(r.job, jj => { $('#pf-step').textContent = jj.step || ''; $('#pf-pct').textContent = jj.progress >= 0 ? Math.round(jj.progress * 100) + '%' : ''; $('#pf-bar').style.width = (jj.progress >= 0 ? jj.progress * 100 : 0) + '%'; });
     pfRender(res.result.runs || []); toast('Test completato', 'ok');

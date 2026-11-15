@@ -213,12 +213,13 @@
       </div>
       <div class="card" style="margin-top:14px">
         <h2>Test prestazioni emulatore</h2>
-        <div class="hint">Avvia il gioco scelto sul cabinato, lo lascia girare per il tempo indicato misurando quanto pesa l'emulatore (CPU totale, core più carico, GPU, temperatura) e poi lo chiude. Il verdetto dice se quel sistema ha margine o è al limite e cosa cambiare nella scheda Emulatori. Con <b>Confronta con le consigliate</b> fa una seconda prova con le impostazioni consigliate applicate temporaneamente (batocera.conf viene ripristinato alla fine). Scegli una scena di gioco, non la schermata del titolo: il gioco parte da zero, quindi i primi 12 s non vengono contati.</div>
+        <div class="hint"><b>Benchmark</b>: avvia il gioco da EmulationStation per 6 s (così Batocera genera la configurazione esatta di quel sistema), lo chiude e lo rilancia nella modalità benchmark dell'emulatore — RetroArch con vsync e audio sbloccati per N secondi di gioco, MAME con <code>-bench</code> — ottenendo la <b>velocità rispetto al tempo reale</b>: 1,0× = regge appena i 60 fps, 3× = tre volte più veloce del necessario. Numero esatto e ripetibile: cambia impostazioni nella scheda Emulatori e rifai la prova. Dolphin, PCSX2, Flycast e gli altri non hanno una modalità benchmark: per loro (o spuntando <b>Misura in gioco</b>) il Companion misura invece CPU, core più carico, GPU e temperatura durante il gioco. <b>Confronta con le consigliate</b> ripete la prova con le impostazioni consigliate applicate temporaneamente (batocera.conf ripristinato alla fine). Durante il benchmark lo schermo del cabinato mostra il gioco accelerato: è normale.</div>
         <div class="btns" style="margin-top:8px;align-items:center">
           <select id="pf-sys" onchange="pfGames()"><option value="">Sistema…</option></select>
           <select id="pf-game" style="max-width:320px"><option value="">Gioco…</option></select>
           <select id="pf-sec"><option value="30">30 s</option><option value="45" selected>45 s</option><option value="90">90 s</option></select>
           <label class="chk"><input type="checkbox" id="pf-cmp"> Confronta con le consigliate</label>
+          <label class="chk"><input type="checkbox" id="pf-live"> Misura in gioco</label>
           <button class="btn primary" id="pf-run" onclick="pfRun()">🏁 Avvia</button>
           <button class="btn" id="pf-stop" onclick="pfStop()" hidden>⏹ Ferma</button>
         </div>
