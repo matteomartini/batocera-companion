@@ -712,7 +712,7 @@ var extSystems = map[string][]string{
 	".ngp": {"ngp"}, ".ngc": {"ngpc"}, ".ws": {"wswan"}, ".wsc": {"wswanc"}, ".col": {"colecovision"}, ".min": {"pokemini"}, ".pbp": {"psp"}, ".cso": {"psp"},
 	".gdi": {"dreamcast"}, ".cdi": {"dreamcast"}, ".rom": {"msx1"}, ".mx1": {"msx1"}, ".mx2": {"msx2"}, ".dsk": {"msx1"}, ".3ds": {"3ds"}, ".cia": {"3ds"},
 	".rvz": {"gamecube", "wii"}, ".gcz": {"gamecube"}, ".wbfs": {"wii"}, ".wad": {"prboom"},
-	".bin": {"megadrive", "atari2600", "psx", "sega32x", "colecovision"}, ".iso": {"psx", "ps2", "psp", "dreamcast", "saturn", "gamecube"},
+	".bin": {"megadrive", "atari2600", "psx", "sega32x", "colecovision"}, ".iso": {"psx", "ps2", "gamecube", "wii", "psp", "dreamcast", "saturn"},
 	".img": {"psx"}, ".cue": {"psx", "segacd", "pcenginecd", "saturn", "dreamcast"}, ".chd": {"psx", "ps2", "dreamcast", "saturn", "segacd", "pcenginecd", "naomi"},
 }
 
@@ -735,11 +735,20 @@ func isDiscSystem(s string) bool {
 	return false
 }
 
-func headerSystem(head []byte) string {
+func headerSystem(head []byte, size int64) string {
 	if len(head) < 0x200 {
 		return ""
 	}
 	h := head
+	// GameCube / Wii: magic a 0x1C / 0x18
+	if len(h) >= 0x20 {
+		if h[0x1C] == 0xC2 && h[0x1D] == 0x33 && h[0x1E] == 0x9F && h[0x1F] == 0x3D {
+			return "gamecube"
+		}
+		if h[0x18] == 0x5D && h[0x19] == 0x1C && h[0x1A] == 0x9E && h[0x1B] == 0xA3 {
+			return "wii"
+		}
+	}
 	switch {
 	case bytes.Contains(h[0x100:0x120], []byte("SEGA 32X")):
 		return "sega32x"
@@ -756,6 +765,10 @@ func headerSystem(head []byte) string {
 	case bytes.Contains(h, []byte("BOOT2")):
 		return "ps2"
 	case bytes.Contains(h, []byte("PLAYSTATION")) || bytes.Contains(h, []byte("BOOT =")):
+		// PS1 e PS2 condividono la stessa firma: le immagini DVD (> 750 MB) sono PS2
+		if size > 750*1024*1024 {
+			return "ps2"
+		}
 		return "psx"
 	case bytes.Contains(h, []byte("PSP GAME")):
 		return "psp"
@@ -775,7 +788,11 @@ func (a *Analyzer) classifyConsole(it *Item, dbs []consoleDB, fname string, head
 		return
 	}
 	// 2. header
-	if hs := headerSystem(head); hs != "" {
+	var fsize int64
+	if st, err := os.Stat(it.Sources[0]); err == nil {
+		fsize = st.Size()
+	}
+	if hs := headerSystem(head, fsize); hs != "" {
 		it.System = hs
 		it.SystemOptions = uniq(append([]string{hs}, extSystems[ext]...))
 		it.Confidence = "yellow"
@@ -800,6 +817,9 @@ func (a *Analyzer) classifyConsole(it *Item, dbs []consoleDB, fname string, head
 				cands = append([]string{c}, cands...)
 			}
 		}
+	}
+	if ext == ".iso" && fsize > 750*1024*1024 && len(cands) > 0 && cands[0] == "psx" {
+		cands = append([]string{"ps2"}, cands...)
 	}
 	cands = uniq(cands)
 	it.SystemOptions = cands
