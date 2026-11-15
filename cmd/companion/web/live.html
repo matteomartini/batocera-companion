@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Cabinato – schermo</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="app.css"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+html,body{margin:0;height:100%;background:#000!important;color:#9aa3b2;font:12px "Segoe UI",system-ui,sans-serif;overflow:hidden}
+#wrap{position:relative;height:100%;display:flex;flex-direction:column}
+#stage{flex:1;display:flex;align-items:center;justify-content:center;outline:none;background:#000}
+#stage img{max-width:100%;max-height:100%;display:block}
+#bar{display:flex;gap:10px;align-items:center;padding:4px 10px;background:#161a22;border-top:1px solid #283040;user-select:none}
+#bar b{color:#e8ebf0}
+.on{color:#3fcf6e}.off{color:#ff5a5a}
+select,button{background:#1e2430;color:#e8ebf0;border:1px solid #283040;border-radius:6px;padding:2px 6px;font:inherit}
+button{cursor:pointer}
+#kb{margin-left:auto}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage" tabindex="0" title="Clicca qui e usa la tastiera per controllare il cabinato"><img id="live" alt=""></div>
+  <div id="pad" class="pad mobile-only" style="background:#161a22"></div>
+  <div id="bar">
+    <span id="st">collegamento…</span>
+    <select id="fps"><option value="8">8 fps</option><option value="12" selected>12 fps</option><option value="20">20 fps</option><option value="30">30 fps</option></select>
+    <select id="w"><option value="640">640</option><option value="960" selected>960</option><option value="1280">1280</option></select>
+    <button onclick="start()">Riconnetti</button>
+    <button onclick="wakeScreen()" title="Esce dal salvaschermo">☀ Sveglia</button>
+    <button onclick="typePrompt()" title="Digita un testo (URL, codice) sul cabinato">⌨ Digita testo</button>
+    <button onclick="emuKill()" title="Chiude il gioco in corso (come Hotkey+Start)">⏹ Esci dal gioco</button>
+    <label><input type="checkbox" id="kbon" checked> Tastiera → cabinato</label>
+    <span id="kb">Frecce · Invio=A/OK · Esc=B/indietro · X=A Z=B S=X A=Y · Q/W=L/R · Invio=Start · Shift dx=Select · F1 menu RetroArch · Esc×2 esci</span>
+  </div>
+</div>
+<script src="input.js"></script>
+<script>
+function emuKill() { fetch('/api/cmd' + (window.BC_KEY ? '?key=' + encodeURIComponent(window.BC_KEY) : ''), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'emukill'})}).then(r => r.json()).then(j => { if (j.error) alert(j.error); }).catch(e => alert(e.message)); }
+</script>
+<script>
+const q = new URLSearchParams(location.search);
+window.BC_KEY = q.get('key') || '';
+const KEYQ = window.BC_KEY ? '&key=' + encodeURIComponent(window.BC_KEY) : '';
+if (q.get('fps')) document.getElementById('fps').value = q.get('fps');
+if (q.get('w')) document.getElementById('w').value = q.get('w');
+function start() {
+  const img = document.getElementById('live');
+  document.getElementById('st').textContent = 'collegamento…';
+  img.onerror = () => { document.getElementById('st').innerHTML = '<span class="off">● interrotto</span> — Riconnetti'; };
+  clearInterval(window._probe); window._probe = setInterval(() => { if (img.naturalWidth > 0) document.getElementById('st').innerHTML = '<span class="on">● in diretta ' + img.naturalWidth + 'px</span>'; }, 1000);
+  img.src = '/live?fps=' + document.getElementById('fps').value + '&w=' + document.getElementById('w').value + '&t=' + Date.now() + KEYQ;
+  liveCursor(img).start();
+}
+document.getElementById('fps').onchange = start; document.getElementById('w').onchange = start;
+start(); wakeScreen();
+bindKeyboard(document.getElementById('stage'), () => document.getElementById('kbon').checked);
+buildPad(document.getElementById('pad'));
+document.getElementById('stage').focus();
+// heartbeat anche da questa finestra (così l'app non si chiude se la principale viene chiusa per sbaglio)
+setInterval(() => fetch('/api/ping' + (KEYQ ? '?' + KEYQ.slice(1) : '')).catch(() => {}), 2000);
+window.addEventListener('beforeunload', () => { document.getElementById('live').src = ''; liveCursor(document.getElementById('live')).stop(); navigator.sendBeacon && navigator.sendBeacon('/api/input', JSON.stringify({action: 'close'})); });
+</script>
+</body>
+</html>

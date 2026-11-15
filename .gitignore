@@ -1,0 +1,4 @@
+dist/
+cmd/companion/payload/companion-linux-amd64
+*.exe
+*.zip

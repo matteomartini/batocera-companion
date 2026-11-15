@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1116">
+<title>Batocera Companion</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="brand">
+      <img src="icon.svg" alt="">
+      <div><b>Batocera</b><span>Companion</span></div>
+    </div>
+    <button id="menu-btn" type="button" onclick="toggleMenu()">☰ <span id="menu-cur">Dashboard</span></button>
+    <nav>
+      <a data-view="dash" class="active">🕹️ <span>Dashboard</span> <em class="badge" id="up-badge" hidden></em></a>
+      <a data-view="roms">📦 <span>Aggiungi ROM</span></a>
+      <a data-view="check">🩺 <span>Check-up</span></a>
+      <a data-view="emu">🎛️ <span>Emulatori</span></a>
+      <a data-view="games">🎮 <span>Giochi</span></a>
+      <a data-view="plancia">🕹 <span>Plancia</span></a>
+      <a data-view="dats">🗂️ <span>Database</span></a>
+      <a data-view="bios">💾 <span>BIOS</span></a>
+      <a data-view="look">🎨 <span>Aspetto</span></a>
+      <a data-view="addons">🧩 <span>Add-on</span></a>
+      <a data-view="backup">💽 <span>Backup</span></a>
+      <a data-view="shell">⌨️ <span>Console</span></a>
+      <a data-view="settings">⚙️ <span>Impostazioni</span></a>
+    </nav>
+    <div class="conn" id="conn">
+      <div class="dot" id="dot-ssh"></div><span>SSH</span>
+      <div class="dot" id="dot-es"></div><span>EmulationStation</span>
+    </div>
+    <div class="side-foot"><span id="ver"></span></div>
+  </aside>
+
+  <main id="main">
+
+    <!-- DASHBOARD -->
+    <section data-view="dash" class="view active">
+      <header><h1>Dashboard</h1><div class="hint" id="dash-host"></div></header>
+      <div class="cards">
+        <div class="card stat"><div class="k">Stato</div><div class="v" id="st-state">—</div><div class="s" id="st-run"></div></div>
+        <div class="card stat"><div class="k">Acceso da</div><div class="v" id="st-up">—</div><div class="s" id="st-ver"></div></div>
+        <div class="card stat"><div class="k">Spazio libero</div><div class="v" id="st-disk">—</div><div class="s"><div class="bar"><i id="st-diskbar"></i></div></div></div>
+        <div class="card stat"><div class="k">CPU</div><div class="v" id="st-temp">—</div><div class="s" id="st-roms"></div></div>
+      </div>
+      <div class="card" id="up-card" hidden>
+        <h2>Aggiornamenti disponibili <span class="hint" id="up-when"></span></h2>
+        <div id="up-list"></div>
+        <div class="btns" style="margin-top:8px"><button class="btn" onclick="upLoad(true)">🔄 Controlla ora</button></div>
+        <div id="up-job" hidden><div class="jobline"><span id="up-step"></span></div><div class="bar big"><i id="up-bar"></i></div><pre class="log" id="up-log"></pre></div>
+      </div>
+      <div class="card">
+        <h2>Comandi rapidi</h2>
+        <div class="btns">
+          <button class="btn" onclick="cmd('screenshot')">📸 Screenshot</button>
+          <button class="btn" onclick="cmd('emukill')">⏹ Chiudi gioco</button>
+          <button class="btn" onclick="cmd('reloadgames')">🔄 Ricarica lista giochi</button>
+          <button class="btn" onclick="cmd('restart_es')">♻️ Riavvia EmulationStation</button>
+          <button class="btn warn" onclick="confirmCmd('reboot','Riavviare il cabinato?')">🔁 Riavvia</button>
+          <button class="btn danger" onclick="confirmCmd('shutdown','Spegnere il cabinato?')">⏻ Spegni</button>
+        </div>
+        <div class="btns small">
+          <button class="btn desktop-only ghost" onclick="openWhat('share')">📁 Apri \\share</button>
+          <button class="btn ghost" onclick="openWhat('web')">🌐 Web manager</button>
+          <button class="btn desktop-only ghost" onclick="openWhat('screens')">🖼️ Cartella screenshot</button>
+          <button class="btn ghost" onclick="notifyPrompt()">💬 Messaggio a schermo</button>
+        </div>
+        <div id="shot-wrap" class="shot" hidden><img id="shot"><div class="hint" id="shot-path"></div></div>
+      </div>
+      <div class="card">
+        <h2>Schermo in diretta</h2>
+        <div class="btns">
+          <button class="btn primary" id="live-btn" onclick="liveToggle()">👁 Mostra schermo</button>
+          <select id="live-fps" class="in"><option value="8">8 fps (leggero)</option><option value="12" selected>12 fps</option><option value="20">20 fps</option><option value="30">30 fps</option></select>
+          <select id="live-w" class="in"><option value="640">640 px</option><option value="960" selected>960 px</option><option value="1280">1280 px</option></select>
+          <button class="btn desktop-only" onclick="liveDetach()">🗗 Stacca in una finestra</button>
+          <label class="chk" style="margin-left:6px"><input type="checkbox" id="live-kb" checked> Tastiera → cabinato</label>
+          <button class="btn sm ghost" onclick="wakeScreen()" title="Esce dal salvaschermo di EmulationStation">☀ Sveglia</button>
+          <button class="btn sm ghost" onclick="typePrompt()" title="Digita un testo (URL, codice…) nel campo attivo sul cabinato">⌨ Digita testo</button>
+          <button class="btn sm ghost" onclick="cmd('emukill')" title="Chiude il gioco in corso (come Hotkey+Start)">⏹ Esci dal gioco</button>
+          <span class="hint" id="live-state"></span>
+        </div>
+        <div id="live-wrap" class="shot" hidden><div id="live-stage" tabindex="0" title="Clicca qui e usa la tastiera per controllare il cabinato" style="outline:none"><img id="live" style="width:100%;max-width:1280px;border-radius:8px;border:1px solid var(--line);background:#000;display:block"></div><div id="pad" class="pad mobile-only"></div><div class="hint desktop-only">Clicca sull'immagine per prendere il controllo: frecce · Invio = OK/A · Esc = indietro/B · nei giochi RetroArch: X=A Z=B S=X A=Y Q/W=L/R Invio=Start Shift destro=Select F1=menu Esc×2=esci</div></div>
+        <div class="hint">Cattura dello schermo via ffmpeg sul cabinato (solo video, latenza ~0,5 s). La tastiera arriva al cabinato come tastiera USB virtuale.</div>
+      </div>
+      <div class="card">
+        <h2>Registrazione schermo</h2>
+        <div class="btns">
+          <button class="btn primary" id="rec-btn" onclick="recToggle()">⏺ Registra schermo</button>
+          <select id="rec-q" class="in" title="Qualità">
+            <option value="ultra">Ultra (60 fps, file grande)</option>
+            <option value="high" selected>Alta (60 fps)</option>
+            <option value="mid">Media (30 fps)</option>
+            <option value="low">Bassa (25 fps)</option>
+          </select>
+          <span id="rec-state" class="hint"></span>
+          <div class="grow"></div>
+          <button class="btn ghost" onclick="recList()">📼 Elenco registrazioni</button>
+        </div>
+        <div class="hint">Registra video e audio di quello che c'è a schermo sul cabinato (menu o gioco), salvato in <code>/userdata/recordings</code>. Lo puoi scaricare sul PC da qui.</div>
+        <div id="rec-job" hidden><div class="jobline"><span id="rec-step"></span></div><div class="bar big"><i id="rec-bar"></i></div></div>
+        <table class="tbl" id="rec-table" hidden><thead><tr><th>File</th><th>Dimensione</th><th>Data</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="card" id="dash-summary">
+        <h2>Ultimo check-up</h2>
+        <div class="hint">Nessun check-up eseguito in questa sessione. <a href="#" onclick="go('check');runCheckup();return false">Eseguilo ora</a>.</div>
+      </div>
+    </section>
+
+    <!-- ROM -->
+    <section data-view="roms" class="view">
+      <header><h1>Aggiungi ROM</h1><div class="hint">Scegli i file: capisco che gioco è, per quale sistema e per quale core, lo sistemo e lo copio nella cartella giusta.</div></header>
+      <div class="card">
+        <div class="btns">
+          <button class="btn desktop-only primary" onclick="pick('files')">📄 Scegli file…</button>
+          <button class="btn desktop-only" onclick="pick('folder')">📁 Scegli cartella…</button>
+          <span class="or desktop-only">oppure incolla un percorso:</span>
+          <input id="rom-path" class="in grow" placeholder="D:\ROM\sf2.zip  oppure  D:\ROM\neogeo">
+          <button class="btn" onclick="analyzePath()">Analizza</button>
+          <label class="btn mobile-only">📤 Carica file<input type="file" multiple hidden onchange="uploadAndAnalyze(this.files)"></label>
+        </div>
+        <div class="hint" id="dat-warning"></div>
+      </div>
+      <div class="card" id="rom-job" hidden>
+        <div class="jobline"><b id="rom-job-title"></b><span id="rom-job-step"></span></div>
+        <div class="bar big"><i id="rom-job-bar"></i></div>
+        <pre class="log" id="rom-job-log"></pre>
+      </div>
+      <div class="card" id="rom-result" hidden>
+        <div class="rowhead">
+          <h2>Piano di copia</h2>
+          <div class="legend"><i class="g"></i> riconosciuto <i class="y"></i> da verificare <i class="r"></i> non copiabile</div>
+          <select class="in sel-sm" id="rom-filter" onchange="renderRoms()" title="Mostra solo…">
+            <option value="all">Mostra: tutte</option>
+            <option value="green">Solo riconosciute</option>
+            <option value="yellow">Solo da verificare</option>
+            <option value="red">Solo non copiabili</option>
+            <option value="problems">Solo con problemi (gialle + rosse)</option>
+          </select>
+          <div class="grow"></div>
+          <div class="summary" id="rom-summary"></div>
+        </div>
+        <table class="tbl" id="rom-table">
+          <thead><tr><th></th><th>File</th><th>Gioco</th><th>Sistema</th><th>Core</th><th>Azione</th><th>Destinazione</th><th>Note</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="btns right">
+          <button class="btn primary big" id="rom-apply" onclick="applyRoms()">⬆️ Copia sul cabinato</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHECKUP -->
+    <section data-view="check" class="view">
+      <header><h1>Check-up</h1><div class="hint">Controllo completo: controller, hotkey, BIOS, ROM, video, audio, rete e impostazioni. Ogni correzione fa prima un backup di batocera.conf.</div></header>
+      <div class="card">
+        <div class="btns">
+          <button class="btn primary" onclick="runCheckup()">🩺 Esegui check-up</button>
+          <button class="btn" onclick="reportPDF()" title="Scarica un PDF con hardware, versioni, giochi, BIOS, controller, app e avvisi">📄 Report PDF</button>
+          <div class="filters" id="check-filters"></div>
+          <div class="grow"></div>
+          <div class="score" id="check-score" hidden><b></b><span>/100</span></div>
+        </div>
+        <div id="check-job" hidden><div class="jobline"><span id="check-step"></span></div><div class="bar big"><i class="indet"></i></div></div>
+      </div>
+      <div id="check-list"></div>
+      <div class="card" style="margin-top:14px">
+        <h2>Perché scatta?</h2>
+        <div class="hint">Diagnosi di scatti (stutter) e strappi dell'immagine (tearing): frequenza reale dello schermo, modalità video, CPU e temperature, vsync e impostazioni di RetroArch, catture dello schermo e programmi pesanti in sottofondo, servizi. Lanciala subito dopo aver giocato a un titolo che scatta.</div>
+        <div class="btns" style="margin-top:8px"><button class="btn primary" onclick="stRun()">🩺 Analizza</button></div>
+        <div id="st-job" hidden style="margin-top:8px"><div class="jobline"><span id="st-step"></span></div><div class="bar big"><i class="indet"></i></div></div>
+        <div id="st-out" style="margin-top:10px"></div>
+      </div>
+      <div class="card" id="rl-card" style="margin-top:14px">
+        <h2>Libreria ROM</h2>
+        <div class="hint">Legge <b>tutti</b> i file in <code>/userdata/roms</code> sul cabinato (CRC compresi) e li confronta con i database: giochi riconosciuti, set arcade incompleti, dump sconosciuti, estensioni che EmulationStation ignora, giochi multi-disco con i CD separati in lista, giochi impostati su core non installati (quelli che crashano all'avvio), duplicati. Il risultato entra nel Check-up al posto del semplice conteggio dei file.</div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="rlRun()">🔎 Analizza tutte le ROM</button>
+          <button class="btn" id="rl-fix-md" onclick="rlFix('multidisc')" hidden>💿 Sistema i multi-disco</button>
+          <button class="btn" id="rl-fix-cores" onclick="rlFix('cores')" hidden>🧹 Togli i core non installati</button>
+        </div>
+        <div id="rl-job" hidden style="margin-top:8px"><div class="jobline"><span id="rl-step"></span></div><div class="bar big"><i class="indet"></i></div><pre class="log" id="rl-log"></pre></div>
+        <div id="rl-out" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- GAMES -->
+    <section data-view="emu" class="view">
+      <h1>Emulatori</h1>
+      <p class="sub">Per ogni sistema: quale emulatore usare e come mostrare l'immagine, con la spiegazione di ogni voce e i valori consigliati per il PC del cabinato. Le modifiche vanno in <code>batocera.conf</code> (copia di sicurezza automatica) e valgono dal prossimo avvio di un gioco.</p>
+      <div class="hint" id="emu-hw"></div>
+      <div class="emu-wrap">
+        <div class="card emu-list"><div id="emu-systems">…</div></div>
+        <div class="card emu-form" id="emu-form"><div class="hint">Scegli un sistema a sinistra.</div></div>
+      </div>
+    </section>
+    <section data-view="games" class="view">
+      <header><h1>Giochi</h1><div class="hint">Elenco letto da EmulationStation. Doppio click o ▶ per avviare sul cabinato.</div></header>
+      <div class="card">
+        <div class="btns">
+          <select id="g-sys" class="in" onchange="loadGames()"></select>
+          <input id="g-filter" class="in grow" placeholder="cerca…" oninput="renderGames()">
+          <span class="hint" id="g-count"></span>
+        </div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="gamesScrape()">🖼 Scraper…</button>
+          <button class="btn" onclick="gamesRename()" title="Nomi leggibili: nome esteso per gli arcade, via i tag tra parentesi per le console">✎ Nomi…</button>
+          <button class="btn" id="g-mame" onclick="gamesMame()" title="Verifica e converte gli zip della cartella mame alla versione di MAME installata sul cabinato">🔧 Set MAME…</button>
+          <button class="btn" onclick="gamesMultidisc()" title="Crea l'.m3u e nasconde i singoli CD dei giochi multi-disco">💿 Nascondi duplicati multi-CD</button>
+          <button class="btn" onclick="gamesHide(true)" title="Nasconde i selezionati dalla lista di EmulationStation">👁‍🗨 Nascondi</button>
+          <button class="btn ghost" onclick="gamesHide(false)">Mostra</button>
+          <button class="btn danger" id="g-del" onclick="gamesDelete()" disabled>🗑 Elimina selezionati</button>
+          <label class="chk"><input type="checkbox" id="g-perm"> elimina definitivamente (senza cestino)</label>
+          <div class="grow"></div>
+          <span class="hint" id="g-trash"></span>
+          <button class="btn ghost sm" onclick="gamesTrashEmpty()">Svuota cestino</button>
+        </div>
+        <div id="g-job" hidden><div class="jobline"><span id="g-step"></span></div><div class="bar big"><i id="g-bar"></i></div><pre class="log" id="g-log"></pre></div>
+        <table class="tbl" id="g-table"><thead><tr><th style="width:28px"><input type="checkbox" id="g-all" onchange="gamesAll(this.checked)"></th><th style="width:45%">Nome</th><th>File</th><th style="width:190px"></th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- DATS -->
+    <section data-view="plancia" class="view">
+      <header><h1>Plancia</h1><div class="hint">I comandi fisici del cabinato con le scritte della plancia: si illuminano quando li premi, così verifichi cablaggio ed encoder senza avviare un gioco. Sotto ogni pulsante c'è il tasto Batocera corrispondente (A, B, X, Y, L, R, Start, Hotkey).</div></header>
+      <div class="card">
+        <div class="btns">
+          <span id="pl-st" class="hint">…</span>
+          <div class="grow"></div>
+          <label class="chk"><input type="checkbox" id="pl-swap" onchange="plSwap(this.checked)"> Scambia giocatore 1 ↔ 2</label>
+          <button class="btn" id="pl-edit-btn" onclick="plEditToggle()">✏️ Rinomina pulsanti</button>
+          <button class="btn" onclick="plResetTest()">↺ Azzera test</button>
+        </div>
+        <div class="hint" id="pl-hint" style="margin-top:6px">Premi ogni comando sul cabinato: quelli già provati restano segnati con ✓. In modalità rinomina clicca un pulsante per cambiarne la scritta.</div>
+        <div id="pl-board" class="pl-board"></div>
+        <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Eventi grezzi</summary><pre id="pl-log" class="log" style="max-height:160px"></pre></details>
+      </div>
+    </section>
+    <section data-view="dats" class="view">
+      <header><h1>Database (DAT)</h1><div class="hint">Elenchi ufficiali dei file che ogni core si aspetta. Servono per riconoscere e ricostruire le ROM. Il DAT di MAME viene generato dal MAME installato sul cabinato, così è sempre quello giusto.</div></header>
+      <div class="card">
+        <div class="btns">
+          <button class="btn primary" onclick="datDownloadRecommended()">⬇️ Scarica i consigliati</button>
+          <button class="btn" onclick="datGenerate()">🏭 Genera DAT MAME dal cabinato</button>
+          <button class="btn" onclick="datImport()">📥 Importa DAT da file…</button>
+          <button class="btn ghost" onclick="loadDats()">Aggiorna</button>
+        </div>
+        <div id="dat-job" hidden><div class="jobline"><span id="dat-step"></span></div><div class="bar big"><i id="dat-bar"></i></div><pre class="log" id="dat-log"></pre></div>
+      </div>
+      <div class="card"><h2>Arcade</h2><table class="tbl" id="dat-arcade"><tbody></tbody></table></div>
+      <div class="card"><h2>Console</h2><table class="tbl" id="dat-console"><tbody></tbody></table></div>
+    </section>
+
+    <!-- BIOS -->
+    <section data-view="bios" class="view">
+      <header><h1>BIOS</h1><div class="hint">Stato dei BIOS secondo <code>batocera-systems</code>. Copia i file mancanti in /userdata/bios con il nome esatto.</div></header>
+      <div class="card">
+        <div class="btns">
+          <button class="btn primary" onclick="biosUpload('bios')">⬆️ Carica file BIOS…</button>
+          <button class="btn primary" onclick="biosUpload('folder')">📁 Carica tutta la cartella BIOS…</button>
+          <label class="chk"><input type="checkbox" id="bios-ow"> sovrascrivi anche quelli già presenti</label>
+          <button class="btn ghost" onclick="loadBios(true)">Ricontrolla</button>
+          <span class="hint" id="bios-summary"></span>
+        </div>
+        <div id="bios-job" hidden><div class="jobline"><span id="bios-step"></span></div><div class="bar big"><i id="bios-bar"></i></div><pre class="log" id="bios-log"></pre></div>
+      </div>
+      <div class="card"><table class="tbl" id="bios-table"><thead><tr><th>Sistema</th><th>File</th><th>Stato</th><th>Dettaglio</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <!-- ASPETTO -->
+    <section data-view="look" class="view">
+      <header><h1>Aspetto</h1><div class="hint">Schermata di avvio (video/immagine) e tema di EmulationStation. Ogni modifica è reversibile: gli originali finiscono in <code>/userdata/system/companion_backup</code>.</div></header>
+      <div class="card" id="stock-card">
+        <h2>Modalità "stock" per i video <span id="stock-state" class="hint"></span></h2>
+        <div class="hint">Il cabinato si presenta come un Arcade1Up originale: restano visibili solo i sistemi arcade scelti qui sotto, i menu di configurazione spariscono (modalità Kiosk), niente orologio né suggerimenti in basso. Tutto torna com'era con "Disattiva". EmulationStation viene riavviato.</div>
+        <div id="stock-sys" class="chips" style="margin-top:8px"></div>
+        <label class="chk" style="margin-top:6px"><input type="checkbox" id="stock-kiosk" checked> Modalità Kiosk (nasconde i menu di configurazione; Hotkey+Start e il menu rapido dei giochi restano)</label>
+        <div class="btns" style="margin-top:8px"><button class="btn primary" id="stock-on" onclick="stockSet('on')">🎬 Attiva</button><button class="btn" id="stock-off" onclick="stockSet('off')">↩ Disattiva</button></div>
+      </div>
+      <div class="card">
+        <h2>Schermata di avvio</h2>
+        <div class="hint" id="look-splash-state">…</div>
+        <div class="form" style="margin-top:10px">
+          <label>Video di avvio (.mp4)<div class="btns"><input id="lk-video" class="in grow" placeholder="nessuno" readonly><button class="btn" onclick="lkPick('video')">Scegli…</button></div></label>
+          <label>Immagine fissa dei primi secondi (boot-logo .png) <span class="hint">su molti PC non viene mostrata: meglio metterla dentro il video</span><div class="btns"><input id="lk-bootlogo" class="in grow" placeholder="nessuna" readonly><button class="btn" onclick="lkPick('bootlogo')">Scegli…</button></div></label>
+          <label>Logo della schermata di caricamento di EmulationStation (dopo il video, .png)<div class="btns"><input id="lk-eslogo" class="in grow" placeholder="originale Batocera" readonly><button class="btn" onclick="lkPick('eslogo')">Scegli…</button></div></label>
+          <label>Durata riproduzione<input id="lk-length" class="in" value="auto" placeholder="auto"><span class="hint">Lascia <b>auto</b>: il video viene riprodotto per intero e X parte dopo. Un numero di secondi fisso può far fallire l'avvio grafico (drmSetMaster busy).</span></label>
+          <label class="chk"><input type="checkbox" id="lk-sound" checked> Audio del video</label>
+          <label class="chk"><input type="checkbox" id="lk-subtitle"> Mostra la scritta della versione Batocera</label>
+          <label class="chk"><input type="checkbox" id="lk-replace" checked> Togli gli altri video/immagini già presenti in /userdata/splash</label>
+        </div>
+        <div class="btns">
+          <button class="btn primary" onclick="lkApplySplash()">⬆️ Applica</button>
+          <button class="btn ghost" onclick="lkResetSplash()">↩ Ripristina originale Batocera</button>
+        </div>
+        <div id="look-job" hidden><div class="jobline"><span id="look-step"></span></div><div class="bar big"><i id="look-bar"></i></div><pre class="log" id="look-log"></pre></div>
+      </div>
+      <div class="card">
+        <h2>Tema di EmulationStation</h2>
+        <div class="btns">
+          <span>Tema attuale: <b id="lk-curtheme">—</b></span>
+          <div class="grow"></div>
+          <select id="lk-theme" class="in"></select>
+          <button class="btn primary" onclick="lkSetTheme()">Applica e riavvia ES</button>
+          <button class="btn" onclick="lkUploadTheme()">📦 Carica tema da .zip…</button>
+          <input id="lk-ghurl" class="in grow" placeholder="https://github.com/utente/nome-tema (tema non in catalogo)">
+          <button class="btn" onclick="lkInstallURL()">⬇ Installa da GitHub</button>
+        </div>
+        <div class="hint">I temi si trovano su <a href="#" onclick="openUrl('https://wiki.batocera.org/themes');return false">wiki.batocera.org/themes</a> e su GitHub (es. <code>es-theme-*</code>). Uno zip scaricato da GitHub va bene così com'è.</div>
+        <div class="btns small"><button class="btn ghost" onclick="lkLoadAvailable()">🌐 Catalogo temi Batocera</button><input id="lk-search" class="in" placeholder="cerca…" oninput="lkRenderAvail()" hidden><span class="hint" id="lk-avail-hint"></span></div>
+        <div class="themes" id="lk-avail" hidden></div>
+      </div>
+    </section>
+
+    <!-- ADD-ON -->
+    <section data-view="addons" class="view">
+      <header><h1>Add-on</h1><div class="hint">Store ufficiale Batocera (giochi homebrew, port, bezel, musiche) e <b>Batocera Unofficial Add-Ons</b> (Chiaki per PS5, Moonlight, Steam, Heroic, Fightcade…). Si installano sul cabinato e compaiono in Ports.</div></header>
+      <div class="card">
+        <div class="form adbar">
+          <label>Origine<select id="ad-src" class="in" onchange="adRender()"><option value="all">Tutti</option><option value="bua">Non ufficiali (BUA)</option><option value="official">Store ufficiale Batocera</option></select></label>
+          <label>Categoria<select id="ad-cat" class="in" onchange="adRender()"><option value="all">Tutte</option></select></label>
+          <label>Cerca<input id="ad-search" class="in" placeholder="es. chiaki" oninput="adRender()"></label>
+        </div>
+        <div class="btns adbar2">
+          <label class="chk"><input type="checkbox" id="ad-rec" checked onchange="adRender()"> ⭐ Solo consigliati</label>
+          <label class="chk"><input type="checkbox" id="ad-inst" onchange="adRender()"> Solo installati</label>
+          <div class="grow"></div>
+          <button class="btn ghost" onclick="adLoad(true)">🔄 Aggiorna elenco</button>
+        </div>
+        <div class="hint" id="ad-hint">…</div>
+        <div id="ad-job" hidden><div class="jobline"><b id="ad-job-title"></b><span id="ad-step"></span></div><div class="bar big"><i id="ad-bar"></i></div><pre class="log" id="ad-log"></pre></div>
+      </div>
+      <div class="themes" id="ad-list"></div>
+      <div class="card" style="margin-top:14px">
+        <h2>Configurazione con un clic</h2>
+        <div class="hint">Le app che su Batocera richiedono ritocchi a mano. Il Companion li fa tutti e dice cosa manca.</div>
+        <div class="themes" id="as-list"><div class="muted">…</div></div>
+        <div id="as-job" hidden><div class="jobline"><b id="as-job-title"></b><span id="as-step"></span></div><div class="bar big"><i id="as-bar"></i></div><pre class="log" id="as-log"></pre></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h2>Flathub</h2>
+        <div class="hint">App Linux "ufficiali" (Steam, Heroic, Moonlight, chiaki-ng, emulatori aggiornati…) installate con flatpak e aggiornabili. Compaiono nella sezione <b>Flatpak</b> di EmulationStation.</div>
+        <div class="form adbar">
+          <label>Cerca su Flathub<input id="fh-search" class="in" placeholder="es. steam, heroic, moonlight" onkeydown="if(event.key==='Enter')fhSearch()"></label>
+          <div class="btns" style="align-self:end"><button class="btn primary" onclick="fhSearch()">🔍 Cerca</button><button class="btn ghost" onclick="fhLoad()">⭐ Consigliati e installati</button></div>
+        </div>
+        <div class="hint" id="fh-hint">…</div>
+        <div id="fh-job" hidden><div class="jobline"><b id="fh-job-title"></b><span id="fh-step"></span></div><div class="bar big"><i id="fh-bar"></i></div><pre class="log" id="fh-log"></pre></div>
+        <div class="themes" id="fh-list"></div>
+      </div>
+    </section>
+
+    <!-- SHELL -->
+    <section data-view="shell" class="view">
+      <header><h1>Console SSH</h1><div class="hint">Comandi diretti sul cabinato (utente root). Utile per <code>batocera-settings-get</code>, <code>batocera-systems</code>, <code>batocera-joysticks-hotkeys</code>…</div></header>
+      <div class="card">
+        <div class="term" id="sh-term" onclick="if(!getSelection().toString())$('#sh-cmd').focus()">
+          <pre id="sh-out"><span class="t-dim">Batocera Companion — console del cabinato (root). Invio esegue, Maiusc+Invio va a capo, ↑/↓ richiama i comandi precedenti.</span>
+</pre>
+          <div class="t-in"><span class="t-prompt">root@batocera:~#</span><textarea id="sh-cmd" rows="1" spellcheck="false" autocomplete="off" oninput="shGrow()" onkeydown="shKey(event)"></textarea></div>
+        </div>
+        <div class="btns" style="margin-top:8px"><button class="btn primary" onclick="runShell()">▶ Esegui</button><button class="btn" onclick="shClear()">🧹 Svuota schermata</button><button class="btn" onclick="shCopy()">📋 Copia output</button></div>
+        <div class="chips">
+          <span class="chip" onclick="shq('batocera-info')">batocera-info</span>
+          <span class="chip" onclick="shq('batocera-systems')">batocera-systems</span>
+          <span class="chip" onclick="shq('batocera-joysticks-hotkeys')">joysticks-hotkeys</span>
+          <span class="chip" onclick="shq('cat /userdata/system/batocera.conf | grep -v ^#')">batocera.conf</span>
+          <span class="chip" onclick="shq('cat /userdata/system/configs/emulationstation/es_input.cfg')">es_input.cfg</span>
+          <span class="chip" onclick="shq('tail -n 50 /userdata/system/logs/es_launch_stderr.log')">log ultimo avvio</span>
+          <span class="chip" onclick="shq('ls /usr/lib/libretro/')">core installati</span>
+          <span class="chip" onclick="shq('batocera-es-swissknife --emupid; batocera-es-swissknife --espid')">pid</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section data-view="backup" class="view">
+      <div class="card">
+        <h2>Backup del cabinato sul PC</h2>
+        <div class="hint">Copia sul PC solo i file nuovi o cambiati dall'ultima volta (incrementale), in una cartella normale che puoi sfogliare. Il primo backup delle ROM può durare a lungo; i successivi pochi minuti. <b>Ripristina</b> fa il percorso inverso, riportando sul cabinato i file del backup che mancano o sono diversi.</div>
+        <div class="form adbar">
+          <label>Dove<select id="bk-target" class="in" onchange="bkTarget()"><option value="pc">Sul PC (questo computer)</option><option value="usb">Su un disco USB collegato al cabinato</option></select></label>
+          <label id="bk-dir-wrap">Cartella di destinazione sul PC<input id="bk-dir" class="in" placeholder="es. D:\Backup cabinato"></label>
+          <div class="btns" id="bk-pick-wrap" style="align-self:end"><button class="btn" onclick="bkPick()">📁 Scegli…</button></div>
+          <label id="bk-usb-wrap" hidden>Disco USB<select id="bk-usb" class="in"></select></label>
+          <div class="btns" id="bk-usb-btn" style="align-self:end" hidden><button class="btn" onclick="bkUsbLoad()">🔄 Aggiorna</button></div>
+        </div>
+        <div class="hint" id="bk-usb-hint" hidden>Il backup viene fatto dal cabinato stesso con rsync nella cartella <code>batocera-backup</code> del disco: più veloce che passare dal PC e non occupa la rete. Il disco va formattato in exFAT, NTFS o ext4 (FAT32 non regge file sopra i 4 GB).</div>
+        <div id="bk-cats" class="chklist"></div>
+        <label class="chk"><input type="checkbox" id="bk-mirror"> Rimuovi dal backup i file che sul cabinato non esistono più <span class="hint">(altrimenti il backup conserva anche i giochi cancellati)</span></label>
+        <div class="btns" style="margin-top:10px">
+          <button class="btn" onclick="bkScan()">🔍 Calcola dimensioni</button>
+          <button class="btn primary" onclick="bkRun('backup')">💽 Esegui backup</button>
+          <button class="btn danger" onclick="bkRun('restore')">⏪ Ripristina sul cabinato…</button>
+          <button class="btn ghost" id="bk-cancel" hidden onclick="bkCancel()">✖ Annulla</button>
+        </div>
+        <div class="hint" id="bk-last"></div>
+        <div id="bk-job" hidden><div class="jobline"><b id="bk-job-title"></b><span id="bk-step"></span></div><div class="bar big"><i id="bk-bar"></i></div><pre class="log" id="bk-log"></pre></div>
+      </div>
+    </section>
+    <section data-view="settings" class="view">
+      <header><h1>Impostazioni</h1></header>
+      <div class="card">
+        <h2>Cabinato</h2>
+        <div class="form">
+          <label>Indirizzo IP o nome<input id="c-host" class="in"></label>
+          <label>Indirizzo remoto (Tailscale, opzionale)<input id="c-remote" class="in" placeholder="100.x.x.x — usato quando l'IP di casa non risponde"></label>
+          <label>Utente SSH<input id="c-user" class="in"></label>
+          <label>Password SSH<input id="c-pass" class="in" type="password"></label>
+          <label>Porta SSH<input id="c-sshport" class="in" type="number"></label>
+          <label>Porta API EmulationStation<input id="c-esport" class="in" type="number"></label>
+          <label>Cartella ROM<input id="c-roms" class="in"></label>
+          <label>Cartella BIOS<input id="c-bios" class="in"></label>
+          <label>Cartella screenshot (PC)<input id="c-shots" class="in"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Aggiunta ROM</h2>
+        <div class="form">
+          <label>Ordine di preferenza core arcade<input id="c-pref" class="in" placeholder="fbneo, mame, mame2015, mame2010, mame2003_plus"></label>
+          <label class="chk"><input type="checkbox" id="c-chd"> Converti cue/bin, iso e gdi in CHD sul cabinato</label>
+        </div>
+        <div class="hint">Quando un gioco è completo per più core, viene usato il primo dell'elenco. Se la cartella di destinazione usa un altro core di default, il core viene impostato solo per quel gioco.</div>
+      </div>
+      <div class="card">
+        <h2>Accesso da iPhone / altri dispositivi</h2>
+        <div class="form">
+          <label class="chk"><input type="checkbox" id="c-lan"> Attiva l'accesso dalla rete di casa (con PIN)</label>
+          <label>PIN (almeno 4 cifre)<input id="c-pin" class="in" inputmode="numeric" placeholder="es. 2468"></label>
+          <label>Porta<input id="c-lanport" class="in" type="number" value="8765"></label>
+        </div>
+        <div class="hint" id="c-lan-info">Modalità "server sul PC": il PC deve restare acceso con l'app aperta. Sull'iPhone apri Safari all'indirizzo mostrato qui dopo il salvataggio, inserisci il PIN (solo la prima volta), poi Condividi → <b>Aggiungi alla schermata Home</b>. Preferisci il server sul cabinato qui sotto.</div>
+      </div>
+      <div class="card" id="ts-card">
+        <h2>Accesso remoto (Tailscale)</h2>
+        <div class="hint">Con Tailscale installato sul cabinato (add-on di Batocera) lo raggiungi da fuori casa: questo Companion passa da solo all'indirizzo remoto quando l'IP di casa non risponde, e la web app sul telefono funziona all'indirizzo Tailscale con lo stesso PIN.</div>
+        <div class="hint" id="ts-state" style="margin-top:8px">…</div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="tsAction('enable')">▶ Avvio automatico</button>
+          <button class="btn" onclick="tsAction('restart')">↻ Riavvia</button>
+          <button class="btn" onclick="tsAction('login')">🔑 Accedi all'account…</button>
+          <button class="btn ghost" onclick="tsAction('disable')">⏸ Disattiva avvio</button>
+          <button class="btn ghost" onclick="tsUseRemote()">Usa IP remoto qui</button>
+        </div>
+      </div>
+      <div class="card" id="vb-card">
+        <h2>Pulsanti volume del cabinato</h2>
+        <div class="hint">Il bilanciere del volume collegato a due ingressi dello zero delay: un servizio sul cabinato alza/abbassa il volume di sistema (menu, giochi, Chiaki) e mostra la percentuale a schermo. Tienilo premuto per andare veloce.</div>
+        <div class="hint" id="vb-state" style="margin-top:8px">…</div>
+        <div class="form" style="margin-top:8px">
+          <label>Pulsante volume +<div class="btns"><input id="vb-up" class="in grow" placeholder="non rilevato" readonly><button class="btn" onclick="vbDetect('up')">Rileva…</button></div></label>
+          <label>Pulsante volume −<div class="btns"><input id="vb-down" class="in grow" placeholder="non rilevato" readonly><button class="btn" onclick="vbDetect('down')">Rileva…</button></div></label>
+          <label>Passo (%)<input id="vb-pct" class="in" type="number" value="5" min="1" max="25"></label>
+          <label>Volume massimo (%)<input id="vb-max" class="in" type="number" value="150" min="100" max="200" title="Oltre 100 PipeWire amplifica via software"></label>
+          <label>Volume all'avvio (%)<input id="vb-boot" class="in" type="number" value="50" min="0" max="200" title="Impostato a ogni accensione del cabinato, poi regoli col bilanciere"></label>
+          <label>Tempo minimo fra due variazioni (s)<input id="vb-int" class="in" type="number" value="1" min="0.1" max="5" step="0.1" title="Anche tenendo premuto il bilanciere il volume cambia al massimo una volta ogni tanti secondi"></label>
+          <label class="chk" style="grid-column:1/-1"><input type="checkbox" id="vb-popup"> Mostra la barra del volume di EmulationStation al centro dello schermo <span class="hint">(se la spegni/accendi, EmulationStation viene riavviato: non farlo con un gioco in corso)</span></label>
+        </div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="vbInstall()">🔊 Installa sul cabinato</button>
+          <button class="btn ghost" onclick="vbRemove()">🗑 Rimuovi</button>
+        </div>
+        <div id="vb-job" hidden><div class="jobline"><span id="vb-step"></span></div><div class="bar big"><i id="vb-bar"></i></div><pre class="log" id="vb-log"></pre></div>
+      </div>
+      <div class="card" id="ss-card">
+        <h2>ScreenScraper</h2>
+        <div class="hint">Lo scraper più completo: descrizioni in italiano, genere, anno, copertine, schermate, loghi, video, manuali. Con l'account qui sotto lo usi in due modi: <b>dal Companion</b> (scheda Giochi → Scraper → ScreenScraper) oppure <b>dal menu di Batocera</b> ("Usa anche in Batocera" scrive l'account nelle impostazioni di EmulationStation).</div>
+        <div class="form" style="margin-top:10px">
+          <label>Utente ScreenScraper<input id="ss-user" class="in" autocomplete="off"></label>
+          <label>Password<input id="ss-pass" class="in" type="password" placeholder="(invariata)"></label>
+          <label>Regioni preferite<input id="ss-region" class="in" placeholder="it, eu, wor, us, jp"></label>
+          <label>Lingue descrizioni<input id="ss-lang" class="in" placeholder="it, en"></label>
+        </div>
+        <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Credenziali sviluppatore (servono solo per lo scraper <b>dal Companion</b>)</summary>
+          <div class="hint">ScreenScraper accetta richieste solo da software registrati: oltre all'account utente serve un <b>devid</b> + <b>devpassword</b>. Si chiedono gratis sul forum di screenscraper.fr (sezione "Demande de compte développeur") indicando il nome del programma, in genere in pochi giorni. Senza, usa "Usa anche in Batocera": lo scraper di Batocera ha le sue credenziali.</div>
+          <div class="form" style="margin-top:6px">
+            <label>devid<input id="ss-devid" class="in" autocomplete="off"></label>
+            <label>devpassword<input id="ss-devpass" class="in" type="password" placeholder="(invariata)"></label>
+          </div>
+        </details>
+        <div class="btns" style="margin-top:10px"><button class="btn primary" onclick="ssSave()">💾 Salva</button><button class="btn" onclick="ssTest()">🔑 Prova account</button><button class="btn" onclick="ssToES()">📺 Usa anche in Batocera</button></div>
+        <div class="hint" id="ss-status" style="margin-top:6px"></div>
+      </div>
+      <div class="card" id="sg-card">
+        <h2>Pistole Sinden (lightgun)</h2>
+        <div class="hint">Batocera riconosce le Sinden da solo appena le colleghi via USB (sono una telecamera + un mouse): nessun driver da installare. Qui vedi se sono rilevate e regoli i <b>bordi</b> che la pistola usa per prendere la mira e il <b>rinculo</b>. Le impostazioni valgono per tutti gli emulatori e si applicano dal prossimo gioco avviato.</div>
+        <div id="sg-status" class="hint" style="margin-top:8px">…</div>
+        <div class="form" style="margin-top:10px">
+          <label>Spessore dei bordi<select id="sg-borderssize" class="in"><option value="thin">Sottile (1% dello schermo)</option><option value="medium">Medio (2%) — consigliato</option><option value="big">Grande (2% + cornice nera 1%)</option></select></label>
+          <label>Quando mostrarli<select id="sg-bordersmode" class="in"><option value="auto">Automatico — solo con una pistola collegata (consigliato)</option><option value="normal">Normale</option><option value="hidden">Mai (la mira non funziona)</option><option value="force">Sempre, anche senza pistola (per provare)</option></select></label>
+          <label>Colore<select id="sg-borderscolor" class="in"><option value="white">Bianco — consigliato</option><option value="red">Rosso</option><option value="green">Verde</option><option value="blue">Blu</option></select></label>
+          <label>Rinculo (solo modelli con rinculo)<select id="sg-recoil" class="in"><option value="none">Spento</option><option value="gun">Pistola (un colpo)</option><option value="gun-quiet">Pistola, leggero</option><option value="machinegun">Mitra (a raffica)</option><option value="machinegun-quiet">Mitra, leggero</option></select></label>
+        </div>
+        <div style="display:flex;gap:14px;align-items:flex-start;margin-top:10px;flex-wrap:wrap">
+          <canvas id="sg-preview" width="256" height="192" style="border:1px solid var(--line);border-radius:6px;background:#222"></canvas>
+          <div class="hint" style="flex:1;min-width:220px">Anteprima dei bordi sul tuo schermo 4:3. Il bordo bianco è quello che la telecamera della pistola inquadra: più è spesso, più la mira è stabile, ma mangia un po' di immagine. Su uno schermo da 17" il medio è il compromesso giusto.<br><br>Prima partita: in Batocera → Impostazioni controller → Lightgun fai la <b>calibrazione</b> una volta per pistola, poi nei giochi MAME premi i bordi se la mira è spostata.</div>
+        </div>
+        <div class="btns" style="margin-top:10px"><button class="btn primary" onclick="sgSave()">💾 Salva</button><button class="btn" onclick="sgLoad()">🔄 Rileva pistole</button></div>
+      </div>
+      <div class="card" id="wk-card">
+        <h2>Plancia → tastiera per Model 2 / Model 3 (Wine)</h2>
+        <div class="hint">Gli emulatori Windows sotto Wine (Sega Model 2, Supermodel) non ricevono i tasti che Batocera genera con evmapy. Questo servizio legge direttamente la plancia (dalla configurazione controller di EmulationStation) e manda i tasti di default dell'emulatore con una tastiera virtuale, <b>solo mentre gira un gioco di quei sistemi</b>. Mappa: leva = frecce · Coin = 5 · Start = 1 · A = gas (↑) · B = freno (↓) · X = Z · Y = X · P2 Start/Coin = 2/6 · Hotkey+Start = esci.</div>
+        <div class="hint" id="wk-state" style="margin-top:8px">…</div>
+        <div class="form" style="margin-top:8px">
+          <label>Encoder del giocatore 1<div class="btns"><input id="wk-p1" class="in grow" placeholder="non rilevato: usa l'ordine di EmulationStation" readonly><button class="btn" onclick="wkDetect()">Rileva: muovi la leva P1…</button></div></label>
+        </div>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="wk-swap"> Inverti giocatore 1 e 2</label>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="wkAction('install')">Installa sul cabinato</button>
+          <button class="btn ghost" onclick="wkAction('remove')">Rimuovi</button>
+        </div>
+      </div>
+      <div class="card" id="ha-card">
+        <h2>Home Assistant</h2>
+        <div class="hint">Installa sul cabinato un agente leggero (basato su HA-Batocera di JBSLabs) che pubblica via MQTT solo: <b>acceso/spento</b>, <b>gioco in corso</b>, <b>temperatura CPU</b>, <b>RAM usata</b> e <b>disco usato</b>, più i pulsanti Riavvia/Spegni. Aggiorna ogni 30 secondi senza interrogare il monitor, quindi non disturba i giochi. Il dispositivo compare da solo in Home Assistant (MQTT discovery); reinstallando, i sensori vecchi vengono rimossi.</div>
+        <div class="hint" id="ha-state" style="margin-top:8px">…</div>
+        <div class="form" style="margin-top:8px">
+          <label>Broker MQTT (IP di Home Assistant)<input id="ha-host" class="in" placeholder="192.168.1.92"></label>
+          <label>Porta<input id="ha-port" class="in" type="number" value="1883"></label>
+          <label>Utente MQTT<input id="ha-user" class="in" placeholder="mqtt_user"></label>
+          <label>Password MQTT<input id="ha-pass" class="in" type="password"></label>
+          <label>Nome del dispositivo in HA<input id="ha-name" class="in" value="Cabinato Arcade1Up"></label>
+          <label>ID (lettere/numeri)<input id="ha-id" class="in" value="cabinato"></label>
+        </div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="haInstall()">🏠 Installa / aggiorna sul cabinato</button>
+          <button class="btn ghost" onclick="haRemove()">🗑 Rimuovi</button>
+          <button class="btn ghost" onclick="haLoad()">Aggiorna stato</button>
+        </div>
+        <div id="ha-job" hidden><div class="jobline"><span id="ha-step"></span></div><div class="bar big"><i id="ha-bar"></i></div><pre class="log" id="ha-log"></pre></div>
+      </div>
+      <div class="card" id="cab-card">
+        <h2>Server sul cabinato (consigliato per iPhone)</h2>
+        <div class="hint">Installa questa stessa app <b>dentro Batocera</b> come servizio: parte con il cabinato e l'iPhone funziona anche a PC spento. Il PIN si inserisce una sola volta per dispositivo, poi la sessione non scade mai.</div>
+        <div class="hint" id="cab-state" style="margin-top:8px">…</div>
+        <div class="form" style="margin-top:8px">
+          <label>PIN per il server sul cabinato<input id="cab-pin" class="in" inputmode="numeric" placeholder="es. 2468"></label>
+          <label>Porta<input id="cab-port" class="in" type="number" value="8765"></label>
+        </div>
+        <div class="btns">
+          <button class="btn primary" id="cab-install" onclick="cabInstall()">⬆️ Installa / aggiorna sul cabinato</button>
+          <button class="btn ghost" onclick="cabRemove()">🗑 Rimuovi dal cabinato</button>
+          <button class="btn ghost" onclick="cabLoad()">Aggiorna stato</button>
+        </div>
+        <div id="cab-job" hidden><div class="jobline"><span id="cab-step"></span></div><div class="bar big"><i id="cab-bar"></i></div><pre class="log" id="cab-log"></pre></div>
+      </div>
+      <div class="btns">
+        <button class="btn primary" onclick="saveConfig()">💾 Salva</button>
+        <button class="btn ghost" onclick="lanLogoutAll()">🔒 Scollega tutti i telefoni (richiedi di nuovo il PIN)</button>
+        <button class="btn danger" onclick="quitApp()">⏻ Esci dall'app</button>
+        <button class="btn ghost" onclick="openWhat('data')">📁 Cartella dati app</button>
+        <span class="hint" id="c-msg"></span>
+      </div>
+    </section>
+
+  </main>
+</div>
+<div id="toasts"></div>
+<dialog id="gdlg" class="wide"><div id="gdlg-body"></div></dialog>
+<dialog id="dlg"><div id="dlg-body"></div><div class="btns right"><button class="btn" onclick="dlgClose(false)">Annulla</button><button class="btn primary" id="dlg-ok" onclick="dlgClose(true)">OK</button></div></dialog>
+<script src="input.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

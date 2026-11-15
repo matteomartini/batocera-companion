@@ -1,0 +1,185 @@
+Þÿÿÿ#!/usr/bin/env python3
+# Batocera Companion - verifica/ricostruzione dei set MAME alla versione installata sul cabinato.
+# uso: mame_rebuild.py <cartella roms> <check|convert> [--xml file.xml[.gz]] [--only nome,nome]
+import os, sys, json, zipfile, zlib, gzip, subprocess, shutil, time
+import xml.etree.ElementTree as ET
+
+roms_dir = sys.argv[1]
+mode = sys.argv[2]
+xml_path = None
+only = None
+args = sys.argv[3:]
+while args:
+    a = args.pop(0)
+    if a == "--xml": xml_path = args.pop(0)
+    elif a == "--only": only = set(x.strip().lower() for x in args.pop(0).split(",") if x.strip())
+trash = "/userdata/system/companion_trash/mame_old"
+
+def log(*a):
+    print(*a, file=sys.stderr, flush=True)
+
+# ---------- 1) zip presenti e indice per CRC ----------
+present = {}   # nome macchina -> percorso zip
+for f in sorted(os.listdir(roms_dir)):
+    if f.lower().endswith(".zip"):
+        present[f[:-4].lower()] = os.path.join(roms_dir, f)
+log("zip presenti: %d" % len(present))
+
+index = {}     # (crc, size) -> [(zip, entry)]
+zipinfo = {}   # zip -> {entry: (crc,size)}
+bad = []
+for name, zp in present.items():
+    try:
+        with zipfile.ZipFile(zp) as z:
+            ent = {}
+            for i in z.infolist():
+                if i.is_dir(): continue
+                k = (i.CRC & 0xffffffff, i.file_size)
+                index.setdefault(k, []).append((zp, i.filename))
+                ent[i.filename] = k
+            zipinfo[zp] = ent
+    except Exception as e:
+        bad.append(name); log("zip non leggibile: %s (%s)" % (name, e))
+log("file indicizzati: %d" % len(index))
+
+# ---------- 2) listxml del MAME installato ----------
+def open_xml():
+    if xml_path:
+        if xml_path.endswith(".gz"): return gzip.open(xml_path, "rb")
+        return open(xml_path, "rb")
+    exe = None
+    for c in ("/usr/bin/mame/mame", "/usr/bin/mame", "/usr/bin/mame64", "/usr/local/bin/mame"):
+        if os.path.isfile(c) and os.access(c, os.X_OK): exe = c; break
+    if not exe:
+        log("MAME standalone non trovato sul cabinato"); sys.exit(2)
+    log("eseguo %s -listxml (puÃ² volerci un paio di minuti)â¦" % exe)
+    p = subprocess.Popen([exe, "-listxml"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd="/tmp", env=dict(os.environ, HOME="/userdata/system"))
+    return p.stdout
+
+machines = {}  # nome -> dict(cloneof, romof, roms:[(name,crc,size,merge,status)], devices:[...], isbios, isdevice, desc)
+version = ""
+t0 = time.time()
+n = 0
+for ev, el in ET.iterparse(open_xml(), events=("start", "end")):
+    if ev == "start":
+        if el.tag == "mame": version = el.get("build", "")
+        continue
+    if el.tag != "machine": continue
+    name = el.get("name", "").lower()
+    roms = []
+    for r in el.findall("rom"):
+        st = r.get("status", "good")
+        crc = r.get("crc")
+        if st == "nodump" or not crc: continue
+        try: roms.append((r.get("name"), int(crc, 16), int(r.get("size", "0")), r.get("merge"), st))
+        except ValueError: pass
+    machines[name] = {
+        "cloneof": (el.get("cloneof") or "").lower(), "romof": (el.get("romof") or "").lower(),
+        "isbios": el.get("isbios") == "yes", "isdevice": el.get("isdevice") == "yes",
+        "roms": roms, "devices": [d.get("name", "").lower() for d in el.findall("device_ref")],
+        "disks": [d.get("name") for d in el.findall("disk") if d.get("status", "good") != "nodump"],
+        "desc": (el.findtext("description") or ""),
+    }
+    el.clear(); n += 1
+    if n % 5000 == 0: log("â¦ %d macchine" % n)
+log("MAME %s: %d macchine (%.0fs)" % (version, len(machines), time.time() - t0))
+
+# ---------- 3) cosa serve a ogni zip (set SPLIT: ogni zip contiene solo le proprie rom) ----------
+def own_roms(m):
+    # in un set split le rom con "merge" vivono nel parent/bios; le altre nello zip della macchina
+    return [r for r in m["roms"] if not r[3]]
+
+def chain(name):
+    # bios/parent necessari (zip separati)
+    out = []
+    seen = set()
+    cur = machines.get(name, {}).get("romof", "")
+    while cur and cur not in seen:
+        seen.add(cur); out.append(cur)
+        cur = machines.get(cur, {}).get("romof", "")
+    return out
+
+report = {"version": version, "converted": [], "ok": [], "incomplete": [], "unknown": [], "bad": bad, "errors": [], "devices": []}
+work = sorted(present)
+if only: work = [w for w in work if w in only]
+todo_extra = set()  # bios/parent/device da ricostruire se mancanti e ricostruibili
+
+def find(k):
+    lst = index.get(k)
+    return lst[0] if lst else None
+
+def relocate(old, new):
+    # lo zip vecchio Ã¨ stato spostato: i suoi file restano utilizzabili dalla nuova posizione
+    for lst in index.values():
+        for i, (zp, e) in enumerate(lst):
+            if zp == old: lst[i] = (new, e)
+
+def build(name, m, out_path):
+    need = own_roms(m)
+    try:
+        with zipfile.ZipFile(out_path + ".part", "w", zipfile.ZIP_DEFLATED) as zout:
+            done = set()
+            for rn, crc, size, _, st in need:
+                if rn in done: continue
+                src = find((crc, size))
+                if not src: raise RuntimeError("manca " + rn)
+                with zipfile.ZipFile(src[0]) as zin:
+                    data = zin.read(src[1])
+                zout.writestr(rn, data); done.add(rn)
+    except Exception:
+        try: os.remove(out_path + ".part")
+        except OSError: pass
+        raise
+    os.replace(out_path + ".part", out_path)
+
+for i, name in enumerate(work, 1):
+    m = machines.get(name)
+    if m is None:
+        report["unknown"].append(name); continue
+    need = own_roms(m)
+    missing = [r[0] for r in need if not find((r[1], r[2]))]
+    for dep in chain(name) + [d for d in m["devices"] if own_roms(machines.get(d, {"roms": []}))]:
+        if dep not in present: todo_extra.add(dep)
+    if missing:
+        report["incomplete"].append({"name": name, "desc": m["desc"], "missing": missing, "needed": len(need)})
+        continue
+    # giÃ  giusto? (stessi nomi e stessi crc)
+    cur = zipinfo.get(present[name], {})
+    wanted = {r[0]: (r[1], r[2]) for r in need}
+    same = all(cur.get(rn) == k for rn, k in wanted.items()) and all(e in wanted for e in cur)
+    if same:
+        report["ok"].append(name); continue
+    if mode != "convert":
+        report["converted"].append({"name": name, "desc": m["desc"], "files": len(need)}); continue
+    try:
+        os.makedirs(trash, exist_ok=True)
+        tmp = os.path.join(roms_dir, name + ".companion_new.zip")
+        build(name, m, tmp)
+        old = os.path.join(trash, name + ".zip")
+        shutil.move(present[name], old); relocate(present[name], old)
+        os.replace(tmp, os.path.join(roms_dir, name + ".zip"))
+        report["converted"].append({"name": name, "desc": m["desc"], "files": len(need)})
+        log("â %s (%s)" % (name, m["desc"]))
+    except Exception as e:
+        report["errors"].append("%s: %s" % (name, e)); log("â %s: %s" % (name, e))
+    if i % 50 == 0: log("â¦ %d/%d" % (i, len(work)))
+
+# bios/parent/device mancanti ma ricostruibili dai file presenti
+for dep in sorted(todo_extra):
+    m = machines.get(dep)
+    if not m: continue
+    need = own_roms(m)
+    if not need: continue
+    missing = [r[0] for r in need if not find((r[1], r[2]))]
+    if missing:
+        report["devices"].append({"name": dep, "desc": m["desc"], "status": "manca (%d file non disponibili)" % len(missing)}); continue
+    if mode == "convert":
+        try:
+            build(dep, m, os.path.join(roms_dir, dep + ".zip"))
+            report["devices"].append({"name": dep, "desc": m["desc"], "status": "creato"}); log("+ %s (%s)" % (dep, m["desc"]))
+        except Exception as e:
+            report["errors"].append("%s: %s" % (dep, e))
+    else:
+        report["devices"].append({"name": dep, "desc": m["desc"], "status": "ricostruibile"})
+
+print(json.dumps(report))

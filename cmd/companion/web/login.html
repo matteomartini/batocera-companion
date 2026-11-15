@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Batocera Companion</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="app.css">
+<style>body{display:flex;align-items:center;justify-content:center;height:100vh}.box{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:28px;width:320px;text-align:center}.box img{width:64px}.box input{font-size:28px;letter-spacing:8px;text-align:center;width:100%;margin:14px 0}</style></head>
+<body><div class="box"><img src="icon.svg" alt=""><h2 style="margin:8px 0 0">Batocera Companion</h2><div class="hint">Inserisci il PIN impostato sul PC</div>
+<input id="pin" class="in" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="12" autofocus>
+<button class="btn primary big" style="width:100%" onclick="go()">Entra</button><div class="hint" id="msg" style="margin-top:10px"></div></div>
+<script>
+async function go(){const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:document.getElementById('pin').value})});const j=await r.json();if(j.ok)location.href='/';else document.getElementById('msg').textContent=j.error||'errore';}
+document.getElementById('pin').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+</script></body></html>

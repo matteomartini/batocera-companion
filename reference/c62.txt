@@ -1,0 +1,29 @@
+æpath	batocompanion/cmd/companion
+mod	batocompanion	(devel)	
+dep	github.com/BurntSushi/xgb	v0.0.0-20160522181843-27f122750802	h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=
+dep	github.com/andybalholm/brotli	v1.1.1	h1:PR2pgnyFznKEugtsUo0xLdDop5SKXd5Qf5ysW+7XdTA=
+dep	github.com/bodgit/plumbing	v1.3.0	h1:pf9Itz1JOQgn7vEOE7v7nlEfBykYqvUYioC61TwWCFU=
+dep	github.com/bodgit/sevenzip	v1.6.0	h1:a4R0Wu6/P1o1pP/3VV++aEOcyeBxeO/xE2Y9NSTrr6A=
+dep	github.com/bodgit/windows	v1.0.1	h1:tF7K6KOluPYygXa3Z2594zxlkbKPAOvqr97etrGNIz4=
+dep	github.com/go-pdf/fpdf	v0.9.0	h1:PPvSaUuo1iMi9KkaAn90NuKi+P4gwMedWPHhj8YlJQw=
+dep	github.com/hashicorp/errwrap	v1.0.0	h1:hLrqtEDnRye3+sgx6z4qVLNuviH3MR5aQ0ykNJa/UYA=
+dep	github.com/hashicorp/go-multierror	v1.1.1	h1:H5DkEtf6CXdFp0N0Em5UCwQpXMWke8IA0+lD48awMYo=
+dep	github.com/hashicorp/golang-lru/v2	v2.0.7	h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
+dep	github.com/klauspost/compress	v1.17.9	h1:6KIumPrER1LHsvBVuDa0r5xaG0Es51mhhB9BQB2qeMA=
+dep	github.com/kr/fs	v0.1.0	h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=
+dep	github.com/nwaples/rardecode/v2	v2.4.6	h1:ddDMXtry2leooYMOXn0F8RzCvt+9tfq6SpleiRRvS1o=
+dep	github.com/pierrec/lz4/v4	v4.1.21	h1:yOVMLb6qSIDP67pl/5F7RepeKYu/VmTyEXvuMI5d9mQ=
+dep	github.com/pkg/sftp	v1.13.9	h1:4NGkvGudBL7GteO3m6qnaQ4pC0Kvf0onSVc9gR3EWBw=
+dep	github.com/ulikunitz/xz	v0.5.12	h1:37Nm15o69RwBkXM0J6A5OlE67RZTfzUxTj8fB3dfcsc=
+dep	go4.org	v0.0.0-20200411211856-f5505b9728dd	h1:BNJlw5kRTzdmyfh5U8F93HA2OwkP7ZGwA51eJ/0wKOU=
+dep	golang.org/x/crypto	v0.58.0	h1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=
+dep	golang.org/x/image	v0.47.0	h1:za/8gVz++PPZqmZJBNSISICN5Rrj5zixP/8K++fgmqo=
+dep	golang.org/x/text	v0.43.0	h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=
+build	-buildmode=exe
+build	-compiler=gc
+build	-trimpath=true
+build	CGO_ENABLED=0
+build	GOARCH=amd64
+build	GOOS=linux
+build	GOAMD64=v1
+ù2C1
