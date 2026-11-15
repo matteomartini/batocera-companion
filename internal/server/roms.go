@@ -177,9 +177,11 @@ func (s *Server) hPick(w http.ResponseWriter, r *http.Request) (any, error) {
 		multi = "$true"
 	}
 	if kind == "folder" {
-		ps = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Scegli la cartella'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
+		// finestra proprietaria invisibile e "sempre in primo piano": il dialogo
+		// eredita la posizione sopra la finestra del Companion invece di finire dietro
+		ps = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $o = New-Object System.Windows.Forms.Form; $o.TopMost = $true; $o.ShowInTaskbar = $false; $o.StartPosition = 'Manual'; $o.Size = New-Object System.Drawing.Size(1,1); $o.Location = New-Object System.Drawing.Point(-2000,-2000); $o.Opacity = 0; $o.Show(); $o.Activate(); $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Scegli la cartella'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.SelectedPath }; $o.Close()`
 	} else {
-		ps = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Multiselect = ` + multi + `; $d.Filter = '` + filter + `'; $d.Title = 'Batocera Companion'; if ($d.ShowDialog() -eq 'OK') { $d.FileNames | ForEach-Object { Write-Output $_ } }`
+		ps = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $o = New-Object System.Windows.Forms.Form; $o.TopMost = $true; $o.ShowInTaskbar = $false; $o.StartPosition = 'Manual'; $o.Size = New-Object System.Drawing.Size(1,1); $o.Location = New-Object System.Drawing.Point(-2000,-2000); $o.Opacity = 0; $o.Show(); $o.Activate(); $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Multiselect = ` + multi + `; $d.Filter = '` + filter + `'; $d.Title = 'Batocera Companion'; if ($d.ShowDialog($o) -eq 'OK') { $d.FileNames | ForEach-Object { Write-Output $_ } }; $o.Close()`
 	}
 	cmd := exec.Command("powershell", "-NoProfile", "-STA", "-NonInteractive", "-Command", ps)
 	hideWindow(cmd)
