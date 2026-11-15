@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -342,21 +343,52 @@ func (s *Server) restoreJob(j *jobs.Job, dir string, cats []string) (any, error)
 
 // ---------- USB (rsync sul cabinato) ----------
 
+var reLsblkKV = regexp.MustCompile(`([A-Z]+)="([^"]*)"`)
+
 func (s *Server) hBackupUSB(w http.ResponseWriter, r *http.Request) (any, error) {
 	if r.Method != http.MethodPost {
-		res, err := s.ssh.RunTimeout(`for m in /media/*; do [ -d "$m" ] || continue; mountpoint -q "$m" || continue; df -hP "$m" | awk -v m="$m" -v fs="$(findmnt -no FSTYPE "$m" 2>/dev/null)" 'NR==2{print m"\t"$2"\t"$4"\t"fs}'; done`, time.Minute)
+		res, err := s.ssh.RunTimeout(`echo "@@mounted"
+for m in /media/*; do [ -d "$m" ] || continue; mountpoint -q "$m" || continue; df -hP "$m" | awk -v m="$m" -v fs="$(findmnt -no FSTYPE "$m" 2>/dev/null)" 'NR==2{print m"\t"$2"\t"$4"\t"fs}'; done
+echo "@@blk"
+# partizioni (chiave=valore, i campi vuoti restano vuoti)
+lsblk -Pno NAME,FSTYPE,SIZE,LABEL,MOUNTPOINT,TYPE,TRAN 2>/dev/null
+echo "@@dmesg"
+dmesg 2>/dev/null | grep -iE 'ntfs|exfat|volume is dirty|hibernat|unclean|read-only|sd[a-z]: ' | tail -8`, time.Minute)
 		if err != nil {
 			return nil, err
 		}
+		sec := cab.SplitSections(res.Stdout)
 		drives := []map[string]any{}
-		for _, l := range cab.Lines(res.Stdout) {
+		for _, l := range cab.Lines(sec["mounted"]) {
 			f := strings.Split(l, "\t")
 			if len(f) < 4 {
 				continue
 			}
 			drives = append(drives, map[string]any{"mount": f[0], "label": path.Base(f[0]), "size": f[1], "free": f[2], "fs": f[3]})
 		}
-		return map[string]any{"drives": drives}, nil
+		unmounted := []map[string]any{}
+		for _, l := range cab.Lines(sec["blk"]) {
+			kv := map[string]string{}
+			for _, m := range reLsblkKV.FindAllStringSubmatch(l, -1) {
+				kv[m[1]] = m[2]
+			}
+			if kv["TYPE"] != "part" || kv["FSTYPE"] == "" {
+				continue
+			}
+			switch kv["FSTYPE"] {
+			case "swap", "LVM2_member", "linux_raid_member", "crypto_LUKS":
+				continue
+			}
+			mp := kv["MOUNTPOINT"]
+			if strings.HasPrefix(mp, "/media/") || mp == "/" || mp == "/boot" || strings.HasPrefix(mp, "/userdata") || strings.HasPrefix(mp, "/var") {
+				continue
+			}
+			if mp != "" && kv["TRAN"] != "usb" {
+				continue
+			}
+			unmounted = append(unmounted, map[string]any{"dev": "/dev/" + kv["NAME"], "fs": kv["FSTYPE"], "size": kv["SIZE"], "label": strings.ReplaceAll(kv["LABEL"], `\x20`, " "), "mounted_at": mp, "bus": kv["TRAN"]})
+		}
+		return map[string]any{"drives": drives, "unmounted": unmounted, "dmesg": strings.TrimSpace(sec["dmesg"])}, nil
 	}
 	var req struct {
 		Action string   `json:"action"`
@@ -366,6 +398,32 @@ func (s *Server) hBackupUSB(w http.ResponseWriter, r *http.Request) (any, error)
 	}
 	if err := readJSON(r, &req); err != nil {
 		return nil, err
+	}
+	if req.Action == "mount" {
+		if !strings.HasPrefix(req.Mount, "/dev/") || strings.ContainsAny(req.Mount, " ;&|$`'\"") {
+			return nil, errors.New("dispositivo non valido")
+		}
+		dev := req.Mount
+		script := `dev=` + dev + `
+fs=$(lsblk -rno FSTYPE "$dev" | head -1); lb=$(lsblk -rno LABEL "$dev" | head -1 | sed 's/\\x20/ /g'); [ -n "$lb" ] || lb=$(basename "$dev")
+mp="/media/$lb"; mkdir -p "$mp"
+case "$fs" in
+  ntfs) mount -t ntfs3 -o rw,noatime,uid=0,gid=0,umask=000 "$dev" "$mp" 2>/tmp/bc_mount.err || ntfs-3g -o rw,noatime,umask=000 "$dev" "$mp" 2>>/tmp/bc_mount.err || mount -t ntfs3 -o ro,uid=0,gid=0 "$dev" "$mp" 2>>/tmp/bc_mount.err;;
+  exfat) mount -t exfat -o rw,noatime,umask=000 "$dev" "$mp" 2>/tmp/bc_mount.err;;
+  *) mount -o rw,noatime "$dev" "$mp" 2>/tmp/bc_mount.err;;
+esac
+if mountpoint -q "$mp"; then echo "OK $mp $(findmnt -no OPTIONS "$mp" | cut -d, -f1)"; else echo "FAIL"; cat /tmp/bc_mount.err; dmesg 2>/dev/null | tail -5; rmdir "$mp" 2>/dev/null; fi`
+		res, err := s.ssh.RunTimeout(script, time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		out := strings.TrimSpace(res.Stdout)
+		if !strings.HasPrefix(out, "OK ") {
+			return nil, fmt.Errorf("montaggio non riuscito: %s", strings.TrimPrefix(out, "FAIL\n"))
+		}
+		f := strings.Fields(out)
+		ro := len(f) > 2 && f[2] == "ro"
+		return map[string]any{"ok": true, "mount": f[1], "readonly": ro}, nil
 	}
 	if !strings.HasPrefix(req.Mount, "/media/") || strings.Contains(req.Mount, "..") {
 		return nil, errors.New("disco non valido")

@@ -968,7 +968,16 @@ async function bkUsbLoad() {
   try {
     const r = await api('backup/usb');
     sel.innerHTML = (r.drives || []).map(d => `<option value="${esc(d.mount)}">${esc(d.label)} · ${esc(d.size)} (liberi ${esc(d.free)}) · ${esc(d.fs)}</option>`).join('') || '<option value="">nessun disco USB montato: collegalo al cabinato e premi Aggiorna</option>';
+    const um = r.unmounted || [];
+    $('#bk-unmounted').innerHTML = um.length ? '<div class="hint" style="margin-top:6px">Dischi collegati ma <b>non montati</b> da Batocera:</div>' + um.map(u => `<div class="finding warn" style="margin-top:6px"><i></i><div class="body"><span class="t">${esc(u.label || u.dev)}</span> <span class="muted">${esc(u.dev)} · ${esc(u.size)} · ${esc(u.fs)}${u.mounted_at ? ' · montato in ' + esc(u.mounted_at) : ''}</span></div><div class="act" style="padding:8px 10px 0 0"><button class="btn sm" onclick="bkMount('${esc(u.dev)}')">🔌 Monta</button></div></div>`).join('') + (r.dmesg ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer;font-size:12px">messaggi del kernel sui dischi</summary><pre class="log" style="max-height:120px">${esc(r.dmesg)}</pre></details>` : '') : '';
   } catch (e) { sel.innerHTML = '<option value="">errore: ' + esc(e.message) + '</option>'; }
+}
+async function bkMount(dev) {
+  try {
+    const r = await api('backup/usb', {action: 'mount', mount: dev});
+    toast('Montato in ' + r.mount + (r.readonly ? ' (SOLO LETTURA: il disco è "sporco", su Windows fai chkdsk /f ed espellilo in sicurezza)' : ''), r.readonly ? 'err' : 'ok');
+  } catch (e) { await dlg('<p><b>Montaggio non riuscito</b></p><pre class="log">' + esc(e.message) + '</pre><p class="hint">Cause tipiche per NTFS: disco non espulso in sicurezza da Windows o "Avvio rapido" di Windows attivo (lascia il volume in stato ibernato). Su Windows: tasto destro sul disco → Proprietà → Strumenti → Controlla, oppure <code>chkdsk X: /f</code>, poi "Rimozione sicura". In alternativa formattalo in exFAT.</p>', 'OK'); }
+  bkUsbLoad();
 }
 function bkCats() { return $$('#bk-cats input[type=checkbox]').filter(i => i.checked).map(i => i.dataset.cat); }
 async function bkPick() {

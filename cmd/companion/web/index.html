@@ -438,6 +438,7 @@
           <label id="bk-usb-wrap" hidden>Disco USB<select id="bk-usb" class="in"></select></label>
           <div class="btns" id="bk-usb-btn" style="align-self:end" hidden><button class="btn" onclick="bkUsbLoad()">🔄 Aggiorna</button></div>
         </div>
+        <div id="bk-unmounted"></div>
         <div class="hint" id="bk-usb-hint" hidden>Il backup viene fatto dal cabinato stesso con rsync nella cartella <code>batocera-backup</code> del disco: più veloce che passare dal PC e non occupa la rete. Il disco va formattato in exFAT, NTFS o ext4 (FAT32 non regge file sopra i 4 GB).</div>
         <div id="bk-cats" class="chklist"></div>
         <label class="chk"><input type="checkbox" id="bk-mirror"> Rimuovi dal backup i file che sul cabinato non esistono più <span class="hint">(altrimenti il backup conserva anche i giochi cancellati)</span></label>

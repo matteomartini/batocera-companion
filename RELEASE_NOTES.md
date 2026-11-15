@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.17.3
+- Backup su USB: i dischi collegati ma non montati da Batocera vengono elencati con un pulsante **Monta** (NTFS via ntfs3/ntfs-3g, exFAT, ext4); se il montaggio fallisce mostra il motivo e i messaggi del kernel (tipico: NTFS "sporco" per Avvio rapido di Windows o disco non espulso in sicurezza).
+
 1.17.2
 - Pulsante **Cerca il cabinato** (barra laterale e Dashboard) per riconnettersi subito; con il cabinato spento lo stato viene ricontrollato ogni 4 s. Un cabinato spento di colpo viene rilevato entro ~25 s (prima la connessione morta restava appesa per minuti).
 
