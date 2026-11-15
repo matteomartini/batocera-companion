@@ -210,17 +210,18 @@ func (e *ES) RunningGame() (*Game, error) {
 	if err != nil {
 		return nil, err
 	}
-	if st == 404 || len(bytes.TrimSpace(b)) == 0 || st >= 400 {
+	// ES risponde 200 + JSON del gioco solo con un gioco avviato; altrimenti 201/204/404 o testo ("No game running")
+	if st != 200 || len(bytes.TrimSpace(b)) == 0 {
 		return nil, nil
 	}
 	var r map[string]any
 	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, nil
 	}
-	if len(r) == 0 {
+	g := parseGame(r)
+	if g.Path == "" && g.Name == "" {
 		return nil, nil
 	}
-	g := parseGame(r)
 	return &g, nil
 }
 
