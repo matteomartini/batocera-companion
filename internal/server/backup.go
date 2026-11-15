@@ -1,0 +1,429 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"batocompanion/internal/cab"
+	"batocompanion/internal/config"
+	"batocompanion/internal/jobs"
+)
+
+// Backup incrementale del cabinato sul PC (SFTP) o su un disco USB collegato al cabinato (rsync).
+
+type bkCat struct {
+	ID      string   `json:"id"`
+	Label   string   `json:"label"`
+	Desc    string   `json:"desc"`
+	Default bool     `json:"default"`
+	Rels    []string `json:"-"`
+	Exclude []string `json:"-"`
+}
+
+var bkCats = []bkCat{
+	{ID: "system", Label: "Configurazione", Desc: "batocera.conf, EmulationStation, controller, impostazioni degli emulatori, script e servizi del Companion", Default: true, Rels: []string{"system"}, Exclude: []string{"system/.cache", "system/logs", "system/companion_trash", "system/flatpak", "system/.local/share/flatpak", "system/add-ons", "system/.steam", "system/.var", "system/.config/chromium"}},
+	{ID: "saves", Label: "Salvataggi", Desc: "partite salvate e stati (saves)", Default: true, Rels: []string{"saves"}, Exclude: []string{"saves/flatpak"}},
+	{ID: "bios", Label: "BIOS", Desc: "/userdata/bios", Default: true, Rels: []string{"bios"}},
+	{ID: "roms", Label: "ROM e giochi", Desc: "tutte le ROM con immagini, video e gamelist (la parte più grande)", Default: true, Rels: []string{"roms"}},
+	{ID: "themes", Label: "Temi e decorazioni", Desc: "temi EmulationStation, bezel, musiche, splash", Default: true, Rels: []string{"themes", "decorations", "music", "splash", "screenshots"}},
+	{ID: "addons", Label: "Add-on", Desc: "programmi aggiuntivi (Chiaki, Tailscale…)", Default: false, Rels: []string{"system/add-ons"}},
+	{ID: "media", Label: "Registrazioni", Desc: "video registrati dal Companion", Default: false, Rels: []string{"recordings"}},
+	{ID: "flatpak", Label: "Flatpak (Steam…)", Desc: "app flatpak e i loro dati: molto grande, si reinstallano da Flathub", Default: false, Rels: []string{"saves/flatpak", "system/flatpak"}},
+}
+
+func bkCat_(id string) *bkCat {
+	for i := range bkCats {
+		if bkCats[i].ID == id {
+			return &bkCats[i]
+		}
+	}
+	return nil
+}
+
+type bkInfo struct {
+	Date       time.Time        `json:"date"`
+	Categories []string         `json:"categories"`
+	Bytes      map[string]int64 `json:"bytes"`
+	Host       string           `json:"host"`
+	Version    string           `json:"version"`
+}
+
+func (s *Server) hBackup(w http.ResponseWriter, r *http.Request) (any, error) {
+	if r.Method != http.MethodPost {
+		out := map[string]any{"dir": s.cfg.BackupDir, "cats": bkCats}
+		if s.cfg.BackupDir != "" {
+			if b, err := os.ReadFile(filepath.Join(s.cfg.BackupDir, "backup-info.json")); err == nil {
+				var bi bkInfo
+				if json.Unmarshal(b, &bi) == nil {
+					out["last"] = bi
+				}
+			}
+		}
+		return out, nil
+	}
+	var req struct {
+		Action string   `json:"action"`
+		Dir    string   `json:"dir"`
+		Cats   []string `json:"cats"`
+		Mirror bool     `json:"mirror"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return nil, err
+	}
+	if req.Dir == "" {
+		return nil, errors.New("scegli la cartella di destinazione sul PC")
+	}
+	if s.cfg.ServerMode {
+		return nil, errors.New("il backup sul PC si fa dall'app sul PC")
+	}
+	if req.Dir != s.cfg.BackupDir {
+		s.cfg.BackupDir = req.Dir
+		_ = config.Save(s.cfg)
+	}
+	if len(req.Cats) == 0 {
+		return nil, errors.New("scegli almeno una categoria")
+	}
+	switch req.Action {
+	case "scan", "backup", "restore":
+	default:
+		return nil, errors.New("azione sconosciuta")
+	}
+	j := s.jobs.Start("Backup", func(j *jobs.Job) (any, error) {
+		return s.backupJob(j, req.Action, req.Dir, req.Cats, req.Mirror)
+	})
+	return map[string]any{"job": j.ID}, nil
+}
+
+type bkFile struct {
+	Rel   string
+	Size  int64
+	Mtime float64
+}
+
+// remoteScan: elenco file sul cabinato per categoria.
+func (s *Server) remoteScan(j *jobs.Job, cats []string) (map[string][]bkFile, error) {
+	script, err := s.asset("backup-scan.py")
+	if err != nil {
+		return nil, err
+	}
+	spec := map[string]any{}
+	for _, c := range cats {
+		if bc := bkCat_(c); bc != nil {
+			spec[c] = map[string]any{"rels": bc.Rels, "exclude": bc.Exclude}
+		}
+	}
+	sb, _ := json.Marshal(spec)
+	res, err := s.ssh.RunCtx(j.Context(), "python3 -c "+cab.ShellQuote(string(script))+" "+cab.ShellQuote(string(sb)), 30*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string][][]any
+	if err := json.Unmarshal([]byte(lastLine(res.Stdout)), &raw); err != nil {
+		return nil, fmt.Errorf("lo script sul cabinato non ha risposto: %s", strings.TrimSpace(res.Stderr))
+	}
+	out := map[string][]bkFile{}
+	for c, l := range raw {
+		for _, f := range l {
+			if len(f) < 3 {
+				continue
+			}
+			out[c] = append(out[c], bkFile{Rel: f[0].(string), Size: int64(f[1].(float64)), Mtime: f[2].(float64)})
+		}
+	}
+	return out, nil
+}
+
+func humanB(b int64) string {
+	if b >= 1<<30 {
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	}
+	return fmt.Sprintf("%d MB", b>>20)
+}
+
+func localNeeds(dir string, f bkFile) bool {
+	st, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f.Rel)))
+	if err != nil {
+		return true
+	}
+	return st.Size() != f.Size || absF(float64(st.ModTime().Unix())-f.Mtime) > 2
+}
+
+func absF(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func (s *Server) backupJob(j *jobs.Job, action, dir string, cats []string, mirror bool) (any, error) {
+	j.SetProgress(-1, "Leggo l'elenco dei file sul cabinato")
+	if action == "restore" {
+		return s.restoreJob(j, dir, cats)
+	}
+	files, err := s.remoteScan(j, cats)
+	if err != nil {
+		return nil, err
+	}
+	sizes := map[string]any{}
+	var todo []bkFile
+	var todoBytes, total int64
+	for _, c := range cats {
+		var cb, tb int64
+		tf := 0
+		for _, f := range files[c] {
+			cb += f.Size
+			if localNeeds(dir, f) {
+				todo = append(todo, f)
+				tb += f.Size
+				tf++
+			}
+		}
+		total += cb
+		todoBytes += tb
+		sizes[c] = map[string]any{"bytes": cb, "human": humanB(cb), "files": len(files[c]), "todo_files": tf, "todo_bytes": tb, "todo_human": humanB(tb)}
+		j.Logf("%s: %d file, %s (da copiare: %d file, %s)", c, len(files[c]), humanB(cb), tf, humanB(tb))
+	}
+	if action == "scan" {
+		return sizes, nil
+	}
+	_ = os.MkdirAll(dir, 0o755)
+	cl, err := s.ssh.SFTP()
+	if err != nil {
+		return nil, err
+	}
+	defer cl.Close()
+	var done int64
+	copied, failed := 0, 0
+	for i, f := range todo {
+		if j.Cancelled() {
+			return nil, errors.New("annullato")
+		}
+		local := filepath.Join(dir, filepath.FromSlash(f.Rel))
+		base := done
+		err := cab.DownloadWith(j.Context(), cl, "/userdata/"+f.Rel, local, func(d, _ int64) {
+			if todoBytes > 0 {
+				j.SetProgress(float64(base+d)/float64(todoBytes), fmt.Sprintf("%d/%d  %s  (%s / %s)", i+1, len(todo), path.Base(f.Rel), humanB(base+d), humanB(todoBytes)))
+			}
+		})
+		done += f.Size
+		if err != nil {
+			failed++
+			j.Logf("✗ %s: %v", f.Rel, err)
+			continue
+		}
+		copied++
+	}
+	removed := 0
+	if mirror {
+		for _, c := range cats {
+			bc := bkCat_(c)
+			if bc == nil {
+				continue
+			}
+			keep := map[string]bool{}
+			for _, f := range files[c] {
+				keep[filepath.ToSlash(f.Rel)] = true
+			}
+			for _, rel := range bc.Rels {
+				root := filepath.Join(dir, filepath.FromSlash(rel))
+				_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+					if err != nil || d.IsDir() {
+						return nil
+					}
+					r, _ := filepath.Rel(dir, p)
+					if !keep[filepath.ToSlash(r)] {
+						os.Remove(p)
+						removed++
+					}
+					return nil
+				})
+			}
+		}
+	}
+	info := bkInfo{Date: time.Now(), Categories: cats, Bytes: map[string]int64{}, Host: s.cfg.Host}
+	for _, c := range cats {
+		if m, ok := sizes[c].(map[string]any); ok {
+			info.Bytes[c] = m["bytes"].(int64)
+		}
+	}
+	if s.info != nil {
+		info.Version = s.info.Version
+	}
+	b, _ := json.MarshalIndent(info, "", "  ")
+	_ = os.WriteFile(filepath.Join(dir, "backup-info.json"), b, 0o644)
+	if copied == 0 && failed == 0 {
+		j.Logf("✓ backup già aggiornato: niente da copiare")
+	} else {
+		j.Logf("✓ %d file copiati, %d errori, %d rimossi dal backup · totale %s", copied, failed, removed, humanB(total))
+	}
+	return map[string]any{"copied": copied, "failed": failed, "removed": removed}, nil
+}
+
+func (s *Server) restoreJob(j *jobs.Job, dir string, cats []string) (any, error) {
+	remote, err := s.remoteScan(j, cats)
+	if err != nil {
+		return nil, err
+	}
+	rmap := map[string]bkFile{}
+	for _, l := range remote {
+		for _, f := range l {
+			rmap[f.Rel] = f
+		}
+	}
+	var todo []string
+	var todoBytes int64
+	for _, c := range cats {
+		bc := bkCat_(c)
+		if bc == nil {
+			continue
+		}
+		for _, rel := range bc.Rels {
+			root := filepath.Join(dir, filepath.FromSlash(rel))
+			_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() || strings.HasSuffix(p, ".part") {
+					return nil
+				}
+				r, _ := filepath.Rel(dir, p)
+				r = filepath.ToSlash(r)
+				st, _ := d.Info()
+				if rf, ok := rmap[r]; ok && rf.Size == st.Size() && absF(float64(st.ModTime().Unix())-rf.Mtime) <= 2 {
+					return nil
+				}
+				todo = append(todo, r)
+				todoBytes += st.Size()
+				return nil
+			})
+		}
+	}
+	if len(todo) == 0 {
+		j.Logf("✓ il cabinato è già allineato al backup")
+		return map[string]any{"copied": 0}, nil
+	}
+	cl, err := s.ssh.SFTP()
+	if err != nil {
+		return nil, err
+	}
+	defer cl.Close()
+	var done int64
+	copied := 0
+	for i, rel := range todo {
+		if j.Cancelled() {
+			return nil, errors.New("annullato")
+		}
+		local := filepath.Join(dir, filepath.FromSlash(rel))
+		st, _ := os.Stat(local)
+		base := done
+		err := cab.UploadWith(j.Context(), cl, local, "/userdata/"+rel, func(d, _ int64) {
+			j.SetProgress(float64(base+d)/float64(todoBytes), fmt.Sprintf("%d/%d  %s", i+1, len(todo), path.Base(rel)))
+		})
+		if st != nil {
+			done += st.Size()
+		}
+		if err != nil {
+			j.Logf("✗ %s: %v", rel, err)
+			continue
+		}
+		copied++
+	}
+	j.Logf("✓ %d file riportati sul cabinato", copied)
+	if containsStr(cats, "system") {
+		j.Logf("· la configurazione è stata ripristinata: riavvia il cabinato (Dashboard → Riavvia) perché EmulationStation la rilegga, e non toccare i menu di ES prima")
+	}
+	_ = s.es.ReloadGames()
+	return map[string]any{"copied": copied}, nil
+}
+
+// ---------- USB (rsync sul cabinato) ----------
+
+func (s *Server) hBackupUSB(w http.ResponseWriter, r *http.Request) (any, error) {
+	if r.Method != http.MethodPost {
+		res, err := s.ssh.RunTimeout(`for m in /media/*; do [ -d "$m" ] || continue; mountpoint -q "$m" || continue; df -hP "$m" | awk -v m="$m" -v fs="$(findmnt -no FSTYPE "$m" 2>/dev/null)" 'NR==2{print m"\t"$2"\t"$4"\t"fs}'; done`, time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		drives := []map[string]any{}
+		for _, l := range cab.Lines(res.Stdout) {
+			f := strings.Split(l, "\t")
+			if len(f) < 4 {
+				continue
+			}
+			drives = append(drives, map[string]any{"mount": f[0], "label": path.Base(f[0]), "size": f[1], "free": f[2], "fs": f[3]})
+		}
+		return map[string]any{"drives": drives}, nil
+	}
+	var req struct {
+		Action string   `json:"action"`
+		Mount  string   `json:"mount"`
+		Cats   []string `json:"cats"`
+		Mirror bool     `json:"mirror"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(req.Mount, "/media/") || strings.Contains(req.Mount, "..") {
+		return nil, errors.New("disco non valido")
+	}
+	j := s.jobs.Start("Backup USB", func(j *jobs.Job) (any, error) {
+		dest := req.Mount + "/batocera-backup"
+		var cmds []string
+		cmds = append(cmds, "mkdir -p "+cab.ShellQuote(dest)+" || exit 5")
+		for _, c := range req.Cats {
+			bc := bkCat_(c)
+			if bc == nil {
+				continue
+			}
+			for _, rel := range bc.Rels {
+				var ex []string
+				for _, e := range bc.Exclude {
+					if strings.HasPrefix(e, rel+"/") {
+						ex = append(ex, "--exclude="+cab.ShellQuote("/"+strings.TrimPrefix(e, rel+"/")))
+					}
+				}
+				del := ""
+				if req.Mirror {
+					del = " --delete"
+				}
+				src, dst := "/userdata/"+rel+"/", dest+"/"+rel+"/"
+				if req.Action == "restore" {
+					src, dst = dest+"/"+rel+"/", "/userdata/"+rel+"/"
+					del = ""
+				}
+				cmds = append(cmds, fmt.Sprintf("[ -d %s ] && { mkdir -p %s; echo '@@ %s'; rsync -rlt --modify-window=2 --info=progress2 --no-inc-recursive%s %s %s %s 2>&1 | tr '\\r' '\\n' | grep -E '%%|error|failed' | tail -3; echo \"rc=${PIPESTATUS[0]}\"; }; true", cab.ShellQuote(src), cab.ShellQuote(dst), rel, del, strings.Join(ex, " "), cab.ShellQuote(src), cab.ShellQuote(dst)))
+			}
+		}
+		if req.Action == "backup" {
+			info, _ := json.Marshal(bkInfo{Date: time.Now(), Categories: req.Cats, Host: s.cfg.Host})
+			cmds = append(cmds, "echo "+cab.ShellQuote(string(info))+" > "+cab.ShellQuote(dest+"/backup-info.json"))
+		}
+		j.SetProgress(-1, "rsync in corso sul cabinato (la rete non viene usata)")
+		res, err := s.ssh.RunCtx(j.Context(), strings.Join(cmds, "\n"), 12*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		bad := false
+		for _, l := range cab.Lines(res.Stdout) {
+			j.Logf("%s", l)
+			if strings.HasPrefix(l, "rc=") && l != "rc=0" {
+				bad = true
+				if l == "rc=127" {
+					return nil, errors.New("rsync non presente su questa Batocera")
+				}
+			}
+		}
+		if bad {
+			j.Logf("(alcuni file sono stati saltati)")
+		}
+		if req.Action == "restore" {
+			_ = s.es.ReloadGames()
+		}
+		return nil, nil
+	})
+	return map[string]any{"job": j.ID}, nil
+}
