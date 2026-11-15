@@ -78,7 +78,7 @@ func (s *Server) hEmu(w http.ResponseWriter, r *http.Request) (any, error) {
 			if k == "emulator" {
 				e, c, _ := strings.Cut(v, "/")
 				if v == "" {
-					cmds = append(cmds, fmt.Sprintf("sed -i '/^%s\\.\\(emulator\\|core\\)=/d' /userdata/system/batocera.conf", req.System))
+					cmds = append(cmds, "bc_del "+req.System+".emulator", "bc_del "+req.System+".core")
 					log = append(log, req.System+".emulator/core → automatico")
 				} else {
 					cmds = append(cmds, "batocera-settings-set "+req.System+".emulator "+cab.ShellQuote(e), "batocera-settings-set "+req.System+".core "+cab.ShellQuote(c))
@@ -88,19 +88,49 @@ func (s *Server) hEmu(w http.ResponseWriter, r *http.Request) (any, error) {
 			}
 			full := req.System + "." + k
 			if v == "" {
-				cmds = append(cmds, fmt.Sprintf("sed -i '/^%s=/d' /userdata/system/batocera.conf", strings.ReplaceAll(full, ".", `\.`)))
+				cmds = append(cmds, "bc_del "+full)
 				log = append(log, full+" → automatico (riga tolta)")
 			} else {
 				cmds = append(cmds, "batocera-settings-set "+full+" "+cab.ShellQuote(v))
 				log = append(log, full+"="+v)
 			}
 		}
-		if _, err := s.ssh.RunTimeout(strings.Join(cmds, "\n"), 2*time.Minute); err != nil {
+		cmds = append(cmds, "echo @@verify; grep -E '^"+regexp.QuoteMeta(req.System)+"\\.' /userdata/system/batocera.conf | grep -v '\\['")
+		res, err := s.ssh.RunTimeout(strings.Join(cmds, "\n"), 2*time.Minute)
+		if err != nil {
 			return nil, err
+		}
+		if res.Exit != 0 {
+			return nil, fmt.Errorf("comando fallito (exit %d): %s", res.Exit, strings.TrimSpace(res.Stderr))
+		}
+		_, after, _ := strings.Cut(res.Stdout, "@@verify")
+		now := map[string]string{}
+		for _, l := range strings.Split(after, "\n") {
+			if k, v, ok := strings.Cut(strings.TrimSpace(l), "="); ok {
+				now[strings.TrimPrefix(k, req.System+".")] = v
+			}
+		}
+		var missing []string
+		for k, v := range req.Values {
+			kk := k
+			if k == "emulator" {
+				e, c, _ := strings.Cut(v, "/")
+				if v != "" && (now["emulator"] != e || now["core"] != c) {
+					missing = append(missing, k)
+				}
+				continue
+			}
+			if v != "" && now[kk] != v {
+				missing = append(missing, k)
+			}
 		}
 		s.mu.Lock()
 		s.info = nil
 		s.mu.Unlock()
+		if len(missing) > 0 {
+			return nil, fmt.Errorf("scrittura non riuscita per: %s (batocera.conf attuale: %v)", strings.Join(missing, ", "), now)
+		}
+		log = append(log, "", "Verifica su batocera.conf: ok ("+strings.TrimSpace(after)+")")
 		return map[string]any{"log": log}, nil
 	}
 	conf := in.BatoceraConf

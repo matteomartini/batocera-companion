@@ -1,9 +1,6 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
-Novità dalla 1.15:
-- Backend riscritto: copia ROM e analisi cartelle in parallelo, connessione SSH più robusta (riconnessione automatica, failover su host remoto/Tailscale)
-- Riconoscimento ISO GameCube/Wii/PS2 dall'intestazione del file (prima finivano in psx)
-- Modalità stock per i video: scelta per giochi installati, non per sistema
-- Stato cabinato corretto: nel menu non risulta più "in gioco"
+1.16.4
+- Emulatori: le impostazioni per sistema ora vengono scritte davvero in batocera.conf. Il comando ufficiale `batocera-settings-set` rifiuta le chiavi assenti o commentate (caso normale in un batocera.conf di serie): il Companion ora le scrive direttamente, poi rilegge il file e mostra il risultato. Lo stesso vale per splash, Sinden e correzioni del check-up.
 
 Dopo l'installazione aggiorna anche il server sul cabinato: Impostazioni → Server sul cabinato → Installa/aggiorna.

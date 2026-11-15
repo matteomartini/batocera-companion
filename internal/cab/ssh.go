@@ -207,6 +207,15 @@ func (s *SSH) RunCtx(ctx context.Context, cmd string, timeout time.Duration) (*R
 	return nil, lastErr
 }
 
+// Prelude eseguito prima di ogni comando: sostituisce batocera-settings-set con
+// una versione che scrive sempre (il comando ufficiale fallisce con exit 11/12
+// se la chiave è commentata o assente, caso normale in un batocera.conf di serie).
+// bc_del toglie la riga attiva di una chiave. Modifica atomica via file temporaneo.
+const Prelude = `bc_set(){ f=/userdata/system/batocera.conf; [ -f "$f" ] || touch "$f"; awk -v k="$1" -v v="$2" 'BEGIN{d=0}{l=$0;sub(/^[#; \t]+/,"",l);if(index(l,k"=")==1){if(!d){print k"="v;d=1};next}print}END{if(!d)print k"="v}' "$f" >"$f.bc" && cat "$f.bc" >"$f" && rm -f "$f.bc"; }
+bc_del(){ f=/userdata/system/batocera.conf; [ -f "$f" ] || return 0; awk -v k="$1" '{l=$0;sub(/^[ \t]+/,"",l);if(index(l,k"=")==1)next;print}' "$f" >"$f.bc" && cat "$f.bc" >"$f" && rm -f "$f.bc"; }
+batocera-settings-set(){ if [ "$1" = "-f" ]; then command batocera-settings-set "$@"; else bc_set "$1" "$2"; fi; }
+`
+
 func isConnErr(err error) bool {
 	e := err.Error()
 	return strings.Contains(e, "EOF") || strings.Contains(e, "closed") || strings.Contains(e, "broken pipe") || strings.Contains(e, "reset") || strings.Contains(e, "handshake") || strings.Contains(e, "open channel")
@@ -221,7 +230,7 @@ func (s *SSH) runOn(ctx context.Context, c *ssh.Client, cmd string, timeout time
 	var out, errb bytes.Buffer
 	sess.Stdout, sess.Stderr = &out, &errb
 	done := make(chan error, 1)
-	go func() { done <- sess.Run("bash -c " + ShellQuote(cmd)) }()
+	go func() { done <- sess.Run("bash -c " + ShellQuote(Prelude+cmd)) }()
 	var timer <-chan time.Time
 	if timeout > 0 {
 		timer = time.After(timeout)
@@ -272,7 +281,7 @@ func (s *SSH) StreamSession(cmd string) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	sess.Stdout = pw
 	sess.Stderr = io.Discard
-	if err := sess.Start("bash -c " + ShellQuote(cmd)); err != nil {
+	if err := sess.Start("bash -c " + ShellQuote(Prelude+cmd)); err != nil {
 		sess.Close()
 		return nil, err
 	}
