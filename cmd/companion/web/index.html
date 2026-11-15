@@ -25,6 +25,7 @@
       <a data-view="roms">📦 <span>Aggiungi ROM</span></a>
       <a data-view="check">🩺 <span>Check-up</span></a>
       <a data-view="emu">🎛️ <span>Emulatori</span></a>
+      <a data-view="test">🧪 <span>Test</span></a>
       <a data-view="games">🎮 <span>Giochi</span></a>
       <a data-view="plancia">🕹 <span>Plancia</span></a>
       <a data-view="dats">🗂️ <span>Database</span></a>
@@ -191,6 +192,38 @@
         </div>
         <div id="rl-job" hidden style="margin-top:8px"><div class="jobline"><span id="rl-step"></span></div><div class="bar big"><i class="indet"></i></div><pre class="log" id="rl-log"></pre></div>
         <div id="rl-out" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- TEST -->
+    <section data-view="test" class="view">
+      <header><h1>Test</h1><div class="hint">Prove misurate sul cabinato: quanto scalda il mini PC sotto carico e quanto margine hanno gli emulatori con le impostazioni attuali.</div></header>
+      <div class="card">
+        <h2>Stress test temperature</h2>
+        <div class="hint">Mette tutti i core della CPU al 100% per i minuti scelti e registra temperatura e frequenza ogni secondo (15 s a riposo prima del carico). Fai una prova <b>senza ventola</b> e una <b>con ventola</b> con la stessa durata: le curve si sovrappongono nel grafico. Il cabinato deve essere nel menu, non in gioco.</div>
+        <div class="btns" style="margin-top:8px;align-items:center">
+          <input id="sx-label" placeholder="Etichetta (es. senza ventola)" style="max-width:240px">
+          <select id="sx-min"><option value="2">2 min</option><option value="3" selected>3 min</option><option value="5">5 min</option><option value="10">10 min</option></select>
+          <button class="btn primary" id="sx-run" onclick="sxRun()">🔥 Avvia stress test</button>
+          <button class="btn" id="sx-stop" onclick="sxStop()" hidden>⏹ Ferma</button>
+        </div>
+        <div id="sx-job" hidden style="margin-top:8px"><div class="jobline"><span id="sx-step"></span><b id="sx-pct"></b></div><div class="bar big"><i id="sx-bar"></i></div><pre class="log" id="sx-log" style="max-height:120px"></pre></div>
+        <div id="sx-chart" style="margin-top:10px"></div>
+        <div id="sx-runs" style="margin-top:10px"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h2>Test prestazioni emulatore</h2>
+        <div class="hint">Avvia il gioco scelto sul cabinato, lo lascia girare per il tempo indicato misurando quanto pesa l'emulatore (CPU totale, core più carico, GPU, temperatura) e poi lo chiude. Il verdetto dice se quel sistema ha margine o è al limite e cosa cambiare nella scheda Emulatori. Con <b>Confronta con le consigliate</b> fa una seconda prova con le impostazioni consigliate applicate temporaneamente (batocera.conf viene ripristinato alla fine). Scegli una scena di gioco, non la schermata del titolo: il gioco parte da zero, quindi i primi 12 s non vengono contati.</div>
+        <div class="btns" style="margin-top:8px;align-items:center">
+          <select id="pf-sys" onchange="pfGames()"><option value="">Sistema…</option></select>
+          <select id="pf-game" style="max-width:320px"><option value="">Gioco…</option></select>
+          <select id="pf-sec"><option value="30">30 s</option><option value="45" selected>45 s</option><option value="90">90 s</option></select>
+          <label class="chk"><input type="checkbox" id="pf-cmp"> Confronta con le consigliate</label>
+          <button class="btn primary" id="pf-run" onclick="pfRun()">🏁 Avvia</button>
+          <button class="btn" id="pf-stop" onclick="pfStop()" hidden>⏹ Ferma</button>
+        </div>
+        <div id="pf-job" hidden style="margin-top:8px"><div class="jobline"><span id="pf-step"></span><b id="pf-pct"></b></div><div class="bar big"><i id="pf-bar"></i></div></div>
+        <div id="pf-out" style="margin-top:10px"></div>
       </div>
     </section>
 

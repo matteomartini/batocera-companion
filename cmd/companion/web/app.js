@@ -37,6 +37,7 @@ function go(v) {
   if (v === 'look') lkLoad();
   if (v === 'check') rlLoad();
   if (v === 'emu') emuLoad();
+  if (v === 'test') { sxLoad(); pfLoad(); }
   if (v === 'addons') { adLoad(false); asLoad(); if (!fhLoaded) fhLoad(); }
   if (v === 'backup') bkLoad();
   if (v === 'plancia') plStart(); else plStop();
@@ -1326,3 +1327,83 @@ setInterval(() => upLoad(false), 6 * 3600 * 1000);
 
 // ---------- REPORT PDF ----------
 function reportPDF() { toast('Preparo il report (qualche secondo)…', 'ok'); window.open('/report.pdf?refresh=1' + (window.BC_KEY ? '&key=' + encodeURIComponent(window.BC_KEY) : ''), '_blank'); }
+
+// ---------- test: stress e prestazioni ----------
+let sxJob = null, pfJob = null;
+async function sxLoad() { try { const r = await api('stress'); sxRender(r.runs || []); } catch (e) {} }
+function sxChart(runs) {
+  const W = 760, H = 260, L = 44, B = 28, T = 12, R = 12;
+  const pts = runs.filter(r => r.points && r.points.length);
+  if (!pts.length) return '<div class="muted">Nessuna prova ancora. Avvia la prima: i risultati restano salvati e si confrontano qui.</div>';
+  const maxT = Math.max(...pts.map(r => r.points[r.points.length - 1][0]));
+  let lo = Math.min(...pts.flatMap(r => r.points.map(p => p[1]))) - 3, hi = Math.max(...pts.flatMap(r => r.points.map(p => p[1]))) + 3;
+  lo = Math.floor(lo / 5) * 5; hi = Math.ceil(hi / 5) * 5; if (hi - lo < 20) hi = lo + 20;
+  const x = t => L + (t / maxT) * (W - L - R), y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const cols = ['#4f8cff', '#ff7a45', '#2ecc71', '#c86bff', '#ffd23f', '#ff4f6d', '#1dd3d0', '#9aa0a6'];
+  let g = '';
+  for (let v = lo; v <= hi; v += 5) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--fg3)">${v}°</text>`;
+  for (let t = 0; t <= maxT; t += 60) g += `<text x="${x(t)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--fg3)">${t / 60} min</text>`;
+  g += `<line x1="${x(15)}" x2="${x(15)}" y1="${T}" y2="${H - B}" stroke="var(--fg3)" stroke-dasharray="3 3"/><text x="${x(15) + 4}" y="${T + 10}" font-size="10" fill="var(--fg3)">carico</text>`;
+  if (hi >= 85) g += `<line x1="${L}" x2="${W - R}" y1="${y(85)}" y2="${y(85)}" stroke="var(--warn)" stroke-dasharray="4 3"/>`;
+  pts.forEach((r, i) => { g += `<polyline fill="none" stroke="${cols[i % cols.length]}" stroke-width="2" points="${r.points.map(p => x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1)).join(' ')}"/>`; });
+  const legend = pts.map((r, i) => `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px"><i style="width:14px;height:3px;background:${cols[i % cols.length]};display:inline-block"></i>${esc(r.label)} <span class="muted">max ${r.max_temp}°</span></span>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;display:block">${g}</svg><div style="margin-top:6px;font-size:13px">${legend}</div>`;
+}
+function sxRender(runs) {
+  $('#sx-chart').innerHTML = sxChart(runs);
+  $('#sx-runs').innerHTML = runs.length ? '<table class="tbl"><tr><th>Prova</th><th>Durata</th><th>Riposo</th><th>Max</th><th>Fine</th><th>MHz inizio→fine</th><th></th></tr>' + runs.slice().reverse().map(r => `<tr><td><b>${esc(r.label)}</b><div class="muted" style="font-size:11px">${new Date(r.at).toLocaleString()}</div>${(r.notes || []).map(n => `<div style="font-size:12px">${esc(n)}</div>`).join('')}</td><td>${r.minutes} min</td><td>${r.idle_temp}°</td><td><b>${r.max_temp}°</b>${r.t_to_max != null ? `<div class="muted" style="font-size:11px">in ${r.t_to_max}s</div>` : ''}</td><td>${r.end_temp}°</td><td>${r.mhz_start}→${r.mhz_end}</td><td><button class="btn sm" onclick="sxDel('${r.id}')">🗑</button></td></tr>`).join('') + '</table>' : '';
+}
+async function sxDel(id) { try { const r = await api('stress', {delete: id}); sxRender(r.runs || []); } catch (e) { toast(e.message, 'err'); } }
+async function sxRun() {
+  $('#sx-job').hidden = false; $('#sx-run').disabled = true; $('#sx-stop').hidden = false; $('#sx-log').textContent = '';
+  try {
+    const r = await api('stress', {minutes: +$('#sx-min').value, label: $('#sx-label').value});
+    sxJob = r.job;
+    const res = await pollJob(r.job, jj => { $('#sx-step').textContent = jj.step || ''; $('#sx-pct').textContent = jj.progress >= 0 ? Math.round(jj.progress * 100) + '%' : ''; $('#sx-bar').style.width = (jj.progress >= 0 ? jj.progress * 100 : 0) + '%'; $('#sx-log').textContent = (jj.log || []).join('\n'); });
+    sxRender(res.result.runs || []); toast('Stress test completato: max ' + res.result.run.max_temp + ' °C', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  $('#sx-job').hidden = true; $('#sx-run').disabled = false; $('#sx-stop').hidden = true; sxJob = null;
+}
+async function sxStop() { if (sxJob) try { await api('job/cancel', {id: sxJob}); } catch (e) {} }
+async function pfLoad() {
+  try {
+    const r = await api('perf/games'); const sel = $('#pf-sys'); const cur = sel.value;
+    sel.innerHTML = '<option value="">Sistema…</option>' + (r.systems || []).filter(s => s.count > 0).map(s => `<option value="${esc(s.name)}">${esc(s.fullname || s.name)} (${s.count})</option>`).join('');
+    if (cur) { sel.value = cur; }
+    const p = await api('perf'); pfRender(p.runs || []);
+  } catch (e) {}
+}
+async function pfGames() {
+  const sys = $('#pf-sys').value; const gs = $('#pf-game'); gs.innerHTML = '<option value="">Gioco…</option>';
+  if (!sys) return;
+  try { const r = await api('perf/games?system=' + encodeURIComponent(sys)); gs.innerHTML += (r.games || []).map(g => `<option value="${esc(g.Path)}">${esc(g.Name)}</option>`).join(''); } catch (e) { toast(e.message, 'err'); }
+}
+function pfRender(runs) {
+  const bar = (v, max, cls) => `<div class="bar" style="height:8px;margin-top:4px"><i style="width:${Math.min(100, v / max * 100)}%;background:${cls}"></i></div>`;
+  const col = v => v >= 90 ? 'var(--err)' : v >= 75 ? 'var(--warn)' : 'var(--ok)';
+  $('#pf-out').innerHTML = runs.slice().reverse().map(r => `<div class="finding ${r.verdict.startsWith('❌') ? 'error' : r.verdict.startsWith('⚠') ? 'warn' : 'ok'}"><i></i><div class="body">
+      <span class="t">${esc(r.game)}</span> <span class="muted">${esc(r.system)} · ${r.seconds}s · ${new Date(r.at).toLocaleString()}</span>
+      <div class="d">${esc(r.verdict)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:8px">${(r.results || []).map(x => `<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px"><b>${esc(x.label)}</b>
+        <div style="margin-top:6px">Core più carico <b style="color:${col(x.core_avg)}">${x.core_avg}%</b> <span class="muted">(picco ${x.core_max}%)</span>${bar(x.core_avg, 100, col(x.core_avg))}</div>
+        <div style="margin-top:6px">Emulatore ${x.emu_avg}% di ${x.ncpu} core · CPU totale ${x.cpu_avg}% · ${x.mhz_avg} MHz</div>
+        <div>GPU ${x.gpu_avg}${x.gpu_max ? '/' + x.gpu_max : ''} MHz · max ${x.temp_max} °C</div>
+        ${x.conf ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">impostazioni</summary><pre class="log" style="max-height:90px">${esc(x.conf) || '(nessuna: valori globali)'}</pre></details>` : ''}</div>`).join('')}</div>
+      ${r.compare_note ? `<div class="d" style="margin-top:8px"><b>${esc(r.compare_note)}</b></div>` : ''}
+      ${(r.tips || []).length ? `<div class="d" style="margin-top:6px">${r.tips.map(t => '💡 ' + esc(t)).join('\n')}</div>` : ''}
+    </div><div class="act" style="padding:10px 10px 0 0"><button class="btn sm" onclick="pfDel('${r.id}')">🗑</button></div></div>`).join('') || '<div class="muted">Nessuna prova ancora.</div>';
+}
+async function pfDel(id) { try { const r = await api('perf', {delete: id}); pfRender(r.runs || []); } catch (e) { toast(e.message, 'err'); } }
+async function pfRun() {
+  const sys = $('#pf-sys').value, path = $('#pf-game').value, name = $('#pf-game').selectedOptions[0]?.textContent || '';
+  if (!sys || !path) return toast('Scegli sistema e gioco', 'err');
+  $('#pf-job').hidden = false; $('#pf-run').disabled = true; $('#pf-stop').hidden = false;
+  try {
+    const r = await api('perf', {system: sys, path, name, seconds: +$('#pf-sec').value, compare: $('#pf-cmp').checked});
+    pfJob = r.job;
+    const res = await pollJob(r.job, jj => { $('#pf-step').textContent = jj.step || ''; $('#pf-pct').textContent = jj.progress >= 0 ? Math.round(jj.progress * 100) + '%' : ''; $('#pf-bar').style.width = (jj.progress >= 0 ? jj.progress * 100 : 0) + '%'; });
+    pfRender(res.result.runs || []); toast('Test completato', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  $('#pf-job').hidden = true; $('#pf-run').disabled = false; $('#pf-stop').hidden = true; pfJob = null;
+}
+async function pfStop() { if (pfJob) try { await api('job/cancel', {id: pfJob}); } catch (e) {} }

@@ -142,26 +142,7 @@ func (s *Server) hEmu(w http.ResponseWriter, r *http.Request) (any, error) {
 		{Key: "autosave", Label: "Salvataggio automatico stato", Type: "bool", Value: g("autosave"), Global: gl("autosave"), Desc: "Riprende il gioco dove l'avevi lasciato. Per un cabinato arcade di solito non si vuole: lascialo spento."},
 		{Key: "showFPS", Label: "Mostra FPS", Type: "bool", Value: g("showFPS"), Global: gl("showFPS"), Desc: "Contatore dei fotogrammi in un angolo: utile per diagnosticare gli scatti, poi spegnilo."},
 	}
-	var reco []emuReco
-	if is2D(sys) {
-		reco = append(reco, emuReco{"smooth", "0", "pixel art: pixel netti"})
-		if sys == "fbneo" || sys == "neogeo" || sys == "mame" || strings.HasPrefix(sys, "cps") {
-			reco = append(reco, emuReco{"runahead", "1", "picchiaduro e arcade: un frame di ritardo in meno, la CPU lo regge"})
-			reco = append(reco, emuReco{"secondinstance", "1", "run-ahead più fluido"})
-			reco = append(reco, emuReco{"ratio", "core", "rapporto originale del gioco"})
-		}
-	} else {
-		reco = append(reco, emuReco{"smooth", "1", "3D: meno seghettature"})
-		reco = append(reco, emuReco{"runahead", "0", "3D: troppo pesante"})
-		if sys == "saturn" {
-			reco = append(reco, emuReco{"emulator", "libretro/yabasanshiro", "YabaSanshiro: il core Saturn più leggero; beetle-saturn è più fedele ma chiede una CPU molto più veloce."})
-		}
-		if sys == "n64" {
-			reco = append(reco, emuReco{"emulator", "libretro/mupen64plus-next", "Mupen64Plus-Next: buon compromesso su GPU Intel"})
-		}
-	}
-	reco = append(reco, emuReco{"rewind", "0", "niente micro-scatti"})
-	reco = append(reco, emuReco{"bezel", "none", "sul 4:3 non serve"})
+	reco := recoFor(sys)
 	overrides := 0
 	for k := range conf {
 		if strings.HasPrefix(k, sys+"[") {
@@ -244,4 +225,29 @@ func (s *Server) emuSave(r *http.Request) (any, error) {
 	log = append(log, "", "Verifica su batocera.conf: ok ("+strings.TrimSpace(after)+")")
 	return map[string]any{"log": log}, nil
 
+}
+
+// recoFor: impostazioni consigliate per il sistema sul PC del cabinato.
+func recoFor(sys string) []emuReco {
+	var reco []emuReco
+	if is2D(sys) {
+		reco = append(reco, emuReco{"smooth", "0", "pixel art: pixel netti"})
+		if sys == "fbneo" || sys == "neogeo" || sys == "mame" || strings.HasPrefix(sys, "cps") {
+			reco = append(reco, emuReco{"runahead", "1", "picchiaduro e arcade: un frame di ritardo in meno, la CPU lo regge"})
+			reco = append(reco, emuReco{"secondinstance", "1", "run-ahead più fluido"})
+			reco = append(reco, emuReco{"ratio", "core", "rapporto originale del gioco"})
+		}
+	} else {
+		reco = append(reco, emuReco{"smooth", "1", "3D: meno seghettature"})
+		reco = append(reco, emuReco{"runahead", "0", "3D: troppo pesante"})
+		if sys == "saturn" {
+			reco = append(reco, emuReco{"emulator", "libretro/yabasanshiro", "YabaSanshiro: il core Saturn più leggero; beetle-saturn è più fedele ma chiede una CPU molto più veloce."})
+		}
+		if sys == "n64" {
+			reco = append(reco, emuReco{"emulator", "libretro/mupen64plus-next", "Mupen64Plus-Next: buon compromesso su GPU Intel"})
+		}
+	}
+	reco = append(reco, emuReco{"rewind", "0", "niente micro-scatti"})
+	reco = append(reco, emuReco{"bezel", "none", "sul 4:3 non serve"})
+	return reco
 }
