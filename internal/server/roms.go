@@ -114,9 +114,7 @@ func (s *Server) hRomsApply(w http.ResponseWriter, r *http.Request) (any, error)
 		ap := &roms.Applier{SSH: s.ssh, ES: s.es, Tmp: filepath.Join(s.tmpDir, "rebuild-"+j.ID), Log: func(m string) { j.Logf("%s", m) }, Step: func(p float64, st string) { j.SetProgress(p, st) }}
 		defer os.RemoveAll(ap.Tmp)
 		res, err := ap.Apply(j.Context(), sess)
-		s.mu.Lock()
-		s.info = nil
-		s.mu.Unlock()
+		s.invalidateInfo()
 		return res, err
 	})
 	return map[string]any{"job": j.ID}, nil
@@ -411,9 +409,7 @@ func (s *Server) hBiosUpload(w http.ResponseWriter, r *http.Request) (any, error
 			copied++
 			j.Logf("✓ %s", f.rel)
 		}
-		s.mu.Lock()
-		s.info = nil
-		s.mu.Unlock()
+		s.invalidateInfo()
 		return map[string]any{"copied": copied, "skipped": skipped}, nil
 	})
 	return map[string]any{"job": j.ID}, nil

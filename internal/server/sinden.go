@@ -94,8 +94,6 @@ func (s *Server) hSinden(w http.ResponseWriter, r *http.Request) (any, error) {
 	if _, err := s.ssh.RunTimeout(cmd, time.Minute); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	s.info = nil
-	s.mu.Unlock()
+	s.invalidateInfo()
 	return map[string]any{"ok": true, "note": "le impostazioni valgono dal prossimo gioco avviato; il rinculo richiede di ricollegare la pistola"}, nil
 }

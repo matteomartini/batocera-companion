@@ -95,9 +95,7 @@ func (s *Server) hCheckupFix(w http.ResponseWriter, r *http.Request) (any, error
 			log = append(log, "· EmulationStation riavviato")
 		}
 	}
-	s.mu.Lock()
-	s.info = nil
-	s.mu.Unlock()
+	s.invalidateInfo()
 	if len(log) == 0 {
 		log = append(log, "fatto")
 	}

@@ -40,6 +40,7 @@ type Server struct {
 	mu       sync.Mutex
 	info     *cab.Info
 	infoAt   time.Time
+	infoGen  uint64 // incrementato a ogni invalidazione: scarta raccolte iniziate prima
 	sessions map[string]*roms.Session
 	lastPing time.Time
 	quit     chan struct{}
@@ -409,6 +410,7 @@ func (s *Server) hConfig(w http.ResponseWriter, r *http.Request) (any, error) {
 			cur.ESPort = 1234
 		}
 		s.info = nil
+		s.infoGen++
 		s.mu.Unlock()
 		s.ssh.Configure(cur.Host, cur.RemoteHost, cur.SSHPort, cur.SSHUser, cur.SSHPass)
 		s.es.Configure(cur.Host, cur.ESPort)
@@ -484,15 +486,27 @@ func (s *Server) collectInfo(refresh bool) (*cab.Info, error) {
 		s.mu.Unlock()
 		return in, nil
 	}
+	gen := s.infoGen
 	s.mu.Unlock()
 	in, err := s.ssh.CollectInfo()
 	if err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
-	s.info, s.infoAt = in, time.Now()
+	if s.infoGen == gen {
+		s.info, s.infoAt = in, time.Now()
+	}
 	s.mu.Unlock()
 	return in, nil
+}
+
+// invalidateInfo: dopo una scrittura sul cabinato. Le raccolte già in corso,
+// iniziate prima, non finiranno in cache.
+func (s *Server) invalidateInfo() {
+	s.mu.Lock()
+	s.info = nil
+	s.infoGen++
+	s.mu.Unlock()
 }
 
 func (s *Server) hInfo(w http.ResponseWriter, r *http.Request) (any, error) {
