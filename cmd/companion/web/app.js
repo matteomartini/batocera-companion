@@ -1258,21 +1258,46 @@ async function plSwap(on) { try { await api('plancia', {swap: on}); plData.swap 
 function plResetTest() { plTested.clear(); $$('#pl-board .tested').forEach(e => e.classList.remove('tested')); }
 
 // ---------- MODALITÀ STOCK ----------
-var stockData = null;
+var stockData = null, stockSel = new Set();
 async function stockLoad() {
   try { stockData = await api('stock'); } catch (e) { $('#stock-state').textContent = e.message; return; }
-  const keep = new Set((stockData.keep || '').split(',').map(x => x.trim()).filter(Boolean));
-  $('#stock-sys').innerHTML = (stockData.systems || []).map(sy => `<label class="chip" style="cursor:pointer"><input type="checkbox" class="stock-k" value="${esc(sy.name)}" ${keep.has(sy.name) ? 'checked' : ''}> ${esc(sy.fullname || sy.name)} <span class="hint">${sy.games}</span></label>`).join('') || '<span class="hint">EmulationStation non raggiungibile</span>';
+  stockSel = new Set(stockData.selected || []);
+  const sel = $('#stock-sys'); const cur = sel.value;
+  sel.innerHTML = '<option value="">Tutti i sistemi</option>' + (stockData.systems || []).map(sy => `<option value="${esc(sy.name)}">${esc(sy.fullname || sy.name)} (${sy.games.length})</option>`).join('');
+  if (cur) sel.value = cur;
   const kiosk = (stockData.current || {}).UIMode === 'Kiosk';
   $('#stock-kiosk').checked = stockData.active ? kiosk : true;
   $('#stock-state').textContent = stockData.active ? '● ATTIVA' : '○ non attiva';
-  $('#stock-on').disabled = stockData.active; $('#stock-off').disabled = !stockData.active;
+  $('#stock-on').disabled = false; $('#stock-off').disabled = !stockData.active;
+  $('#stock-on').textContent = stockData.active ? '🎬 Aggiorna la selezione' : '🎬 Attiva';
+  stockRender();
 }
+function stockRows() {
+  const sys = $('#stock-sys').value, q = ($('#stock-filter').value || '').toLowerCase();
+  const rows = [];
+  for (const sy of (stockData && stockData.systems) || []) {
+    if (sys && sy.name !== sys) continue;
+    for (const g of sy.games) {
+      if (q && !(g.name || '').toLowerCase().includes(q) && !(g.path || '').toLowerCase().includes(q)) continue;
+      rows.push({key: sy.name + '|' + g.path, sys: sy, g});
+    }
+  }
+  return rows;
+}
+function stockRender() {
+  if (!stockData) return;
+  const rows = stockRows();
+  $('#stock-games').innerHTML = rows.slice(0, 600).map(r => `<label class="chk" title="${esc(r.g.path)}"><input type="checkbox" data-key="${esc(r.key)}" ${stockSel.has(r.key) ? 'checked' : ''} onchange="stockToggle(this)"> ${esc(r.g.name)} <span class="hint">${esc(r.sys.name)}${r.g.hidden ? ' · nascosto' : ''}</span></label>`).join('') || '<div class="hint">Nessun gioco</div>';
+  $('#stock-count').textContent = `${stockSel.size} giochi scelti` + (rows.length > 600 ? ` · mostrati 600 di ${rows.length}` : '');
+}
+function stockToggle(el) { el.checked ? stockSel.add(el.dataset.key) : stockSel.delete(el.dataset.key); $('#stock-count').textContent = `${stockSel.size} giochi scelti`; }
+function stockPickAll(on) { for (const r of stockRows()) on ? stockSel.add(r.key) : stockSel.delete(r.key); stockRender(); }
+function stockPick(q) { for (const sy of stockData.systems) for (const g of sy.games) if ((g.name || '').toLowerCase().includes(q) || (g.path || '').toLowerCase().includes(q.replace(/ /g, ''))) stockSel.add(sy.name + '|' + g.path); stockRender(); }
 async function stockSet(action) {
-  const keep = [...$$('.stock-k:checked')].map(c => c.value).join(',');
-  if (action === 'on' && !keep) { toast('Scegli almeno un sistema da lasciare visibile', 'err'); return; }
-  if (action === 'on' && !await dlg('<p>Attivo la modalità stock: i sistemi non selezionati spariscono dal menu del cabinato' + ($('#stock-kiosk').checked ? ', i menu di configurazione vengono nascosti (Kiosk)' : '') + ' e EmulationStation si riavvia.</p><p class="hint">Per tornare indietro: "Disattiva" qui, oppure la copia di es_settings.cfg in companion_backup.</p>', 'Attiva')) return;
-  try { await api('stock', {action, keep, kiosk: $('#stock-kiosk').checked}); toast(action === 'on' ? 'Modalità stock attiva: EmulationStation si sta riavviando' : 'Ripristinato: EmulationStation si sta riavviando', 'ok'); setTimeout(stockLoad, 1500); }
+  const games = [...stockSel];
+  if (action === 'on' && !games.length) { toast('Scegli almeno un gioco da lasciare visibile', 'err'); return; }
+  if (action === 'on' && !await dlg(`<p>Attivo la modalità stock: in lista restano <b>${games.length}</b> giochi, gli altri vengono nascosti e i sistemi senza giochi scelti spariscono dal menu${$('#stock-kiosk').checked ? '; i menu di configurazione vengono nascosti (Kiosk)' : ''}. EmulationStation si riavvia.</p><p class="hint">Per tornare indietro: "Disattiva" qui.</p>`, 'Attiva')) return;
+  try { const r = await api('stock', {action, games, kiosk: $('#stock-kiosk').checked}); toast(action === 'on' ? `Modalità stock attiva: ${r.hidden_games} giochi nascosti, EmulationStation si sta riavviando` : 'Ripristinato: EmulationStation si sta riavviando', 'ok'); setTimeout(stockLoad, 2000); }
   catch (e) { toast(e.message, 'err'); }
 }
 

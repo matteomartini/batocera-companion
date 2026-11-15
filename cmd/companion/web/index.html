@@ -282,8 +282,16 @@
       <header><h1>Aspetto</h1><div class="hint">Schermata di avvio (video/immagine) e tema di EmulationStation. Ogni modifica è reversibile: gli originali finiscono in <code>/userdata/system/companion_backup</code>.</div></header>
       <div class="card" id="stock-card">
         <h2>Modalità "stock" per i video <span id="stock-state" class="hint"></span></h2>
-        <div class="hint">Il cabinato si presenta come un Arcade1Up originale: restano visibili solo i sistemi arcade scelti qui sotto, i menu di configurazione spariscono (modalità Kiosk), niente orologio né suggerimenti in basso. Tutto torna com'era con "Disattiva". EmulationStation viene riavviato.</div>
-        <div id="stock-sys" class="chips" style="margin-top:8px"></div>
+        <div class="hint">Il cabinato si presenta come un Arcade1Up originale: in lista restano <b>solo i giochi che scegli qui</b> (gli altri vengono nascosti, i sistemi senza giochi scelti spariscono dal menu), i menu di configurazione spariscono (modalità Kiosk), niente orologio né suggerimenti in basso. Tutto torna com'era con "Disattiva". EmulationStation viene riavviato.</div>
+        <div class="btns" style="margin-top:8px">
+          <select id="stock-sys" class="in" onchange="stockRender()"></select>
+          <input id="stock-filter" class="in grow" placeholder="cerca…" oninput="stockRender()">
+          <button class="btn sm" onclick="stockPick('street fighter')">+ tutti gli Street Fighter</button>
+          <button class="btn sm ghost" onclick="stockPickAll(true)">seleziona i visibili</button>
+          <button class="btn sm ghost" onclick="stockPickAll(false)">deseleziona i visibili</button>
+          <span class="hint" id="stock-count"></span>
+        </div>
+        <div id="stock-games" class="chklist" style="max-height:260px;overflow:auto;margin-top:8px"></div>
         <label class="chk" style="margin-top:6px"><input type="checkbox" id="stock-kiosk" checked> Modalità Kiosk (nasconde i menu di configurazione; Hotkey+Start e il menu rapido dei giochi restano)</label>
         <div class="btns" style="margin-top:8px"><button class="btn primary" id="stock-on" onclick="stockSet('on')">🎬 Attiva</button><button class="btn" id="stock-off" onclick="stockSet('off')">↩ Disattiva</button></div>
       </div>

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -11,13 +12,15 @@ import (
 	"batocompanion/internal/config"
 )
 
-// Modalità "stock" per i video: il cabinato si presenta come un Arcade1Up originale.
-// Nasconde i sistemi non arcade, mette EmulationStation in Kiosk, toglie orologio e suggerimenti.
-// I valori precedenti vengono salvati nella configurazione del Companion.
+// Modalità "stock" per i video: restano visibili solo i giochi scelti (come su un Arcade1Up originale),
+// gli altri vengono nascosti nei gamelist e i sistemi senza giochi scelti spariscono dal menu.
+// EmulationStation va in Kiosk, senza orologio e suggerimenti. Tutto reversibile.
 
 var stockKeys = []string{"HiddenSystems", "UIMode", "DrawClock", "ShowHelpPrompts", "ShowBatteryIndicator"}
 
 var reEsString = regexp.MustCompile(`<(?:string|bool|int)\s+name="([^"]+)"\s+value="([^"]*)"`)
+
+const stockHiddenFile = compDir + "/stock-hidden.json"
 
 func (s *Server) esSettingsGet(keys []string) (map[string]string, error) {
 	res, err := s.ssh.RunTimeout("cat "+esSettings+" 2>/dev/null", 20*time.Second)
@@ -67,28 +70,35 @@ func (s *Server) hStock(w http.ResponseWriter, r *http.Request) (any, error) {
 	if r.Method != http.MethodPost {
 		systems, _ := s.es.Systems()
 		systems = stockRealSystems(systems)
-		var names []map[string]any
+		var list []map[string]any
 		for _, sy := range systems {
-			names = append(names, map[string]any{"name": sy.Name, "fullname": sy.Fullname, "games": sy.Count})
+			if sy.Count == 0 {
+				continue
+			}
+			games, err := s.es.Games(sy.Name)
+			if err != nil {
+				continue
+			}
+			var gl []map[string]any
+			for _, g := range games {
+				gl = append(gl, map[string]any{"id": g.ID, "path": g.Path, "name": g.Name, "hidden": g.Hidden})
+			}
+			list = append(list, map[string]any{"name": sy.Name, "fullname": sy.Fullname, "games": gl})
+		}
+		if list == nil {
+			list = []map[string]any{}
 		}
 		cur, _ := s.esSettingsGet(stockKeys)
-		keep := s.cfg.StockKeep
-		if keep == "" {
-			var def []string
-			for _, sy := range systems {
-				n := strings.ToLower(sy.Name)
-				if n == "fbneo" || n == "mame" || n == "neogeo" || strings.HasPrefix(n, "cps") || strings.Contains(n, "arcade") || n == "naomi" || n == "atomiswave" {
-					def = append(def, sy.Name)
-				}
-			}
-			keep = strings.Join(def, ",")
+		sel := s.cfg.StockGames
+		if sel == nil {
+			sel = []string{}
 		}
-		return map[string]any{"active": s.cfg.StockActive, "systems": names, "keep": keep, "current": cur}, nil
+		return map[string]any{"active": s.cfg.StockActive, "systems": list, "selected": sel, "current": cur}, nil
 	}
 	var req struct {
-		Action string `json:"action"`
-		Keep   string `json:"keep"`
-		Kiosk  bool   `json:"kiosk"`
+		Action string   `json:"action"`
+		Games  []string `json:"games"` // "sistema|percorso"
+		Kiosk  bool     `json:"kiosk"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		return nil, err
@@ -99,25 +109,59 @@ func (s *Server) hStock(w http.ResponseWriter, r *http.Request) (any, error) {
 	backup := "mkdir -p " + backupDir + "; cp " + esSettings + " " + backupDir + "/es_settings.cfg." + time.Now().Format("20060102-150405") + " 2>/dev/null; "
 	switch req.Action {
 	case "on":
+		if len(req.Games) == 0 {
+			return nil, fmt.Errorf("scegli almeno un gioco da lasciare visibile")
+		}
+		keep := map[string]map[string]bool{}
+		for _, g := range req.Games {
+			sys, p, ok := strings.Cut(g, "|")
+			if !ok {
+				continue
+			}
+			if keep[sys] == nil {
+				keep[sys] = map[string]bool{}
+			}
+			keep[sys][p] = true
+		}
+		if s.cfg.StockActive {
+			// riattivazione con una selezione diversa: prima rimetto visibili quelli nascosti la volta scorsa
+			_ = s.stockUnhide()
+		}
 		systems, err := s.es.Systems()
 		if err != nil {
 			return nil, err
 		}
 		systems = stockRealSystems(systems)
-		keep := map[string]bool{}
-		for _, k := range strings.Split(req.Keep, ",") {
-			if k = strings.TrimSpace(k); k != "" {
-				keep[k] = true
-			}
-		}
-		var hidden []string
+		hiddenBySys := map[string][]string{}
+		var hiddenSystems []string
 		for _, sy := range systems {
-			if !keep[sy.Name] {
-				hidden = append(hidden, sy.Name)
+			if len(keep[sy.Name]) == 0 {
+				hiddenSystems = append(hiddenSystems, sy.Name)
+				continue
+			}
+			games, err := s.es.Games(sy.Name)
+			if err != nil {
+				continue
+			}
+			var toHide []string
+			for _, g := range games {
+				if !keep[sy.Name][g.Path] && !g.Hidden {
+					toHide = append(toHide, g.Path)
+				}
+			}
+			if len(toHide) > 0 {
+				out, err := s.gamelistRun(sy.Name, "hide", "", map[string]any{"paths": toHide, "hidden": true})
+				if err != nil {
+					return nil, err
+				}
+				var changed []string
+				_ = json.Unmarshal([]byte(out), &changed)
+				hiddenBySys[sy.Name] = changed
 			}
 		}
-		if len(hidden) == len(systems) {
-			return nil, fmt.Errorf("devi lasciare visibile almeno un sistema")
+		b, _ := json.Marshal(hiddenBySys)
+		if err := s.ssh.UploadBytes(stockHiddenFile, b, 0o644); err != nil {
+			return nil, err
 		}
 		if !s.cfg.StockActive {
 			prev, err := s.esSettingsGet(stockKeys)
@@ -126,8 +170,8 @@ func (s *Server) hStock(w http.ResponseWriter, r *http.Request) (any, error) {
 			}
 			s.cfg.StockPrev = prev
 		}
-		s.cfg.StockKeep = req.Keep
-		hv := strings.Join(hidden, ";")
+		s.cfg.StockGames = req.Games
+		hv := strings.Join(hiddenSystems, ";")
 		ui := "Full"
 		if req.Kiosk {
 			ui = "Kiosk"
@@ -138,8 +182,15 @@ func (s *Server) hStock(w http.ResponseWriter, r *http.Request) (any, error) {
 			return nil, err
 		}
 		s.cfg.StockActive = true
-		return map[string]any{"ok": true, "hidden": hidden}, config.Save(s.cfg)
+		nh := 0
+		for _, l := range hiddenBySys {
+			nh += len(l)
+		}
+		return map[string]any{"ok": true, "hidden_systems": hiddenSystems, "hidden_games": nh}, config.Save(s.cfg)
 	case "off":
+		if err := s.stockUnhide(); err != nil {
+			return nil, err
+		}
 		var cmds []string
 		for _, k := range stockKeys {
 			if v, ok := s.cfg.StockPrev[k]; ok {
@@ -157,4 +208,26 @@ func (s *Server) hStock(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, config.Save(s.cfg)
 	}
 	return nil, fmt.Errorf("azione sconosciuta")
+}
+
+// stockUnhide rimette visibili i giochi nascosti dalla modalità stock.
+func (s *Server) stockUnhide() error {
+	b, err := s.ssh.ReadFile(stockHiddenFile)
+	if err != nil {
+		return nil
+	}
+	var hidden map[string][]string
+	if json.Unmarshal(b, &hidden) != nil {
+		return nil
+	}
+	for sys, paths := range hidden {
+		if len(paths) == 0 {
+			continue
+		}
+		if _, err := s.gamelistRun(sys, "hide", "", map[string]any{"paths": paths, "hidden": false}); err != nil {
+			return err
+		}
+	}
+	_, _ = s.ssh.Run("rm -f " + stockHiddenFile)
+	return nil
 }

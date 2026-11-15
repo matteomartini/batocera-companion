@@ -66,6 +66,22 @@ elif op == "set":
         el.text = str(v)
     tree.write(gl, encoding="utf-8", xml_declaration=True)
     print("ok")
+elif op == "hide":
+    req = json.loads(sys.stdin.read()); want = set(norm(x) for x in req["paths"]); hidden = bool(req["hidden"])
+    changed = []
+    for g in root.findall("game"):
+        p = norm(g.findtext("path", ""))
+        if p not in want: continue
+        el = g.find("hidden"); cur = (el is not None and (el.text or "").strip() == "true")
+        if cur == hidden: continue
+        if hidden:
+            if el is None: el = ET.SubElement(g, "hidden")
+            el.text = "true"
+        else:
+            if el is not None: g.remove(el)
+        changed.append(p)
+    tree.write(gl, encoding="utf-8", xml_declaration=True)
+    print(json.dumps(changed))
 elif op == "remove":
     paths = set(norm(x) for x in json.loads(sys.stdin.read()))
     n = 0

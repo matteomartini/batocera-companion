@@ -41,6 +41,7 @@ type Config struct {
 	StockActive bool              `json:"stock_active"`
 	StockPrev   map[string]string `json:"stock_prev"`
 	StockKeep   string            `json:"stock_keep"`
+	StockGames  []string          `json:"stock_games"` // "sistema|percorso" dei giochi da lasciare visibili
 	// Promemoria aggiornamenti
 	UpdatesSeen map[string]string `json:"updates_seen"`
 	UpdatesLast string            `json:"updates_last"`
