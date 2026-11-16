@@ -1,5 +1,9 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.2
+- **Perché non parte?** (🩺 in Giochi e nei dettagli della Libreria ROM): controlla core per gioco, confronta lo zip con i DAT di tutti i core (file mancanti per nome/CRC, BIOS presente nella cartella), avvia il gioco per 12 s e legge i log di Batocera; verdetto con causa e, dove possibile, pulsante Sistema (es. passa al core che ha il set completo, togli un core non installato).
+- Set arcade: nei DAT vecchi (mame2003_plus) le ROM del BIOS non vengono più contate nel set del gioco.
+
 1.19.1
 - Versioni multiple: raggruppamento più robusto per gli arcade (parentela nei DAT, titolo del DAT, nome in EmulationStation) — trova anche i cloni con titolo diverso (es. Juuouki/Altered Beast) e i set non riconosciuti dal DAT.
 

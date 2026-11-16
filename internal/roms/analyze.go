@@ -485,9 +485,10 @@ func neededRoms(db *dat.DB, name string) ([]dat.Rom, string) {
 			if seen[key] || seen[fmt.Sprintf("crc%08x", r.CRC)] {
 				continue
 			}
-			// rom che appartiene al bios (merge nel romof bios)
-			if r.Merge != "" && cur.CloneOf == "" && cur.RomOf != "" {
-				if b := db.Games[cur.RomOf]; b != nil && b.IsBios {
+			// rom che appartiene al bios (merge nel romof bios): anche nei DAT vecchi
+			// senza attributo isbios, un romof che non è il parent è un BIOS
+			if r.Merge != "" && cur.CloneOf == "" && cur.RomOf != "" && cur != g || (r.Merge != "" && cur.CloneOf == "" && cur.RomOf != "" && cur == g && !g.IsBios) {
+				if b := db.Games[cur.RomOf]; b != nil {
 					bios = b.Name
 					continue
 				}
@@ -501,6 +502,13 @@ func neededRoms(db *dat.DB, name string) ([]dat.Rom, string) {
 		next := cur.CloneOf
 		if next == "" {
 			next = cur.RomOf
+			if next != "" {
+				// il romof di un parent è il BIOS: sta in un suo zip, non nel set
+				if b := db.Games[next]; b != nil {
+					bios = b.Name
+				}
+				break
+			}
 		}
 		if next == "" {
 			break
@@ -1081,4 +1089,26 @@ func (s *Session) RefreshPerGameCore(info *cab.Info) {
 			it.PerGameCore = def != "" && def != it.Core
 		}
 	}
+}
+
+// SetMissing: per un set arcade `name` nel DAT, dati i CRC presenti nello zip,
+// restituisce quanti file servono, quanti ci sono, i nomi mancanti e il BIOS richiesto.
+func SetMissing(db *dat.DB, name string, have map[uint32]bool) (haveN, total int, missing []string, bios string, known bool) {
+	g := db.Games[name]
+	if g == nil {
+		return 0, 0, nil, "", false
+	}
+	need, b := neededRoms(db, name)
+	for _, r := range need {
+		if r.CRC == 0 || r.Opt {
+			continue
+		}
+		total++
+		if have[r.CRC] {
+			haveN++
+		} else {
+			missing = append(missing, fmt.Sprintf("%s (%08x)", r.Name, r.CRC))
+		}
+	}
+	return haveN, total, missing, b, true
 }

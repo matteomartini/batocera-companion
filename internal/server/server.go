@@ -168,6 +168,7 @@ func (s *Server) Handler(local bool) http.Handler {
 	api("games/rename", s.hGamesRename)
 	api("games/multidisc", s.hGamesMultidisc)
 	api("games/mame-rebuild", s.hGamesMame)
+	api("games/diag", s.hGamesDiag)
 	api("roms/analyze", s.hRomsAnalyze)
 	api("roms/set", s.hRomsSet)
 	api("roms/apply", s.hRomsApply)
