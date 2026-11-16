@@ -393,7 +393,7 @@ async function emuSave() {
 }
 
 // ---------- libreria ROM ----------
-let rlReport = null;
+let rlReport = null, rlOk = new Set();
 async function stRun() {
   $('#st-job').hidden = false; $('#st-out').innerHTML = '';
   try {
@@ -411,7 +411,7 @@ async function stFix(btn, cmd) {
   btn.disabled = false;
 }
 async function rlLoad() {
-  try { const r = await api('romlib'); if (r.available) { rlReport = r.report; rlRender(new Date(r.at)); } } catch (e) {}
+  try { const r = await api('romlib'); rlOk = new Set(r.ok_flags || []); if (r.available) { rlReport = r.report; rlRender(new Date(r.at)); } } catch (e) {}
 }
 async function rlRun() {
   $('#rl-job').hidden = false; $('#rl-log').textContent = ''; $('#rl-out').innerHTML = '';
@@ -432,7 +432,7 @@ function rlRender(at) {
     <table class="tbl" style="margin-top:8px"><thead><tr><th>Sistema</th><th>Giochi</th><th>Riconosciuti</th><th>Set incompleti</th><th>Sconosciuti</th><th>Est. ignorata</th><th></th></tr></thead><tbody>`;
   for (const s of rep.systems) {
     if (!s.total && !s.hidden_ext) continue;
-    h += `<tr><td><b>${esc(s.name)}</b>${s.verified ? '' : ' <span class="muted" title="nessun DAT per questo sistema">(non verificabile)</span>'}</td><td>${s.total}</td><td>${st(s.ok, 'ok')}</td><td>${st(s.incomplete, 'err')}</td><td>${st(s.unknown, 'miss')}</td><td>${st(s.hidden_ext, 'miss')}</td><td>${(s.incomplete || s.unknown || s.hidden_ext || s.bad) ? `<button class="btn sm ghost" onclick="rlDetail('${esc(s.name)}')">dettagli</button>` : ''}</td></tr>`;
+    h += `<tr><td><b>${esc(s.name)}</b>${s.verified ? '' : ' <span class="muted" title="nessun DAT per questo sistema">(non verificabile)</span>'}</td><td>${s.total}</td><td>${st(s.ok, 'ok')}</td><td>${st(s.incomplete, 'err')}${(n => n ? ` <span class="tag ok" title="provati a mano e funzionanti">${n} ok</span>` : '')(s.files.filter(f => (f.status === 'incomplete' || f.status === 'unknown' || f.status === 'bad') && rlOk.has('/userdata/roms/' + s.name + '/' + f.path)).length)}</td><td>${st(s.unknown, 'miss')}</td><td>${st(s.hidden_ext, 'miss')}</td><td>${(s.incomplete || s.unknown || s.hidden_ext || s.bad) ? `<button class="btn sm ghost" onclick="rlDetail('${esc(s.name)}')">dettagli</button>` : ''}</td></tr>`;
   }
   h += '</tbody></table>';
   if (rep.discs.length) h += `<p style="margin-top:10px"><b>Multi-disco:</b> ${rep.discs.length} giochi (${noM3U} senza .m3u)</p><ul class="hint">` + rep.discs.map(g => `<li>${esc(g.system)}: ${esc(g.title)} — ${g.files.length} dischi ${g.has_m3u ? '<span class="tag ok">.m3u ok</span>' : '<span class="tag err">dischi separati</span>'}</li>`).join('') + '</ul>';
@@ -445,7 +445,18 @@ function rlDetail(sys) {
   const rows = s.files.filter(f => f.status !== 'ok' && f.status !== 'aux');
   const lab = {unknown: 'sconosciuto', incomplete: 'set incompleto', bad: 'file danneggiato', hidden_ext: 'estensione ignorata'};
   const full = f => '/userdata/roms/' + sys + '/' + f.path;
-  dlg(`<p><b>${esc(sys)}</b>: ${rows.length} file da controllare</p><p class="hint">▶ Prova avvia il gioco sul cabinato così com'è: se parte e gira, tienilo anche se il set risulta incompleto (spesso mancano solo ROM opzionali); se non parte, 🗑 lo sposta nel cestino del cabinato.</p><div style="max-height:60vh;overflow:auto"><table class="tbl"><thead><tr><th>File</th><th>Stato</th><th>Note</th><th></th></tr></thead><tbody>${rows.map(f => `<tr data-rl="${esc(full(f))}"><td class="mono">${esc(f.path)}</td><td><span class="tag ${f.status === 'incomplete' ? 'err' : 'miss'}">${lab[f.status] || f.status}</span></td><td class="hint">${esc(f.name || '')} ${esc(f.detail || '')}${f.missing ? ` (mancano ${f.missing})` : ''}</td><td class="nowrap"><button class="btn sm" title="Avvia sul cabinato" onclick="rlTry(this, '${esc(full(f))}')">▶ Prova</button> <button class="btn sm ghost" title="Chiudi il gioco sul cabinato" onclick="cmd('emukill')">⏹</button> <button class="btn sm ghost" title="Sposta nel cestino del cabinato" onclick="rlTrash(this, '${esc(sys)}', '${esc(full(f))}')">🗑</button></td></tr>`).join('')}</tbody></table></div>`, 'Chiudi');
+  rows.sort((a, b) => (rlOk.has(full(a)) ? 1 : 0) - (rlOk.has(full(b)) ? 1 : 0));
+  const nOk = rows.filter(f => rlOk.has(full(f))).length;
+  dlg(`<p><b>${esc(sys)}</b>: ${rows.length} file da controllare${nOk ? ` · ${nOk} già provati e funzionanti` : ''}</p><p class="hint">▶ Prova avvia il gioco sul cabinato così com'è: se parte e gira, segnalo ✓ Funziona e resta memorizzato (anche dopo una nuova analisi); se non parte, 🗑 lo sposta nel cestino del cabinato.</p><div style="max-height:60vh;overflow:auto"><table class="tbl"><thead><tr><th>File</th><th>Stato</th><th>Note</th><th></th></tr></thead><tbody>${rows.map(f => `<tr data-rl="${esc(full(f))}" class="${rlOk.has(full(f)) ? 'rl-ok' : ''}"><td class="mono">${esc(f.path)}</td><td><span class="tag ${f.status === 'incomplete' ? 'err' : 'miss'}">${lab[f.status] || f.status}</span> <span class="tag ok rl-oktag" ${rlOk.has(full(f)) ? '' : 'hidden'}>funziona</span></td><td class="hint">${esc(f.name || '')} ${esc(f.detail || '')}${f.missing ? ` (mancano ${f.missing})` : ''}</td><td class="nowrap"><button class="btn sm" title="Avvia sul cabinato" onclick="rlTry(this, '${esc(full(f))}')">▶ Prova</button> <button class="btn sm ghost" title="Chiudi il gioco sul cabinato" onclick="cmd('emukill')">⏹</button> <button class="btn sm ${rlOk.has(full(f)) ? 'primary' : 'ghost'}" title="Segna come provato e funzionante" onclick="rlFlag(this, '${esc(full(f))}')">✓ Funziona</button> <button class="btn sm ghost" title="Sposta nel cestino del cabinato" onclick="rlTrash(this, '${esc(sys)}', '${esc(full(f))}')">🗑</button></td></tr>`).join('')}</tbody></table></div>`, 'Chiudi');
+}
+async function rlFlag(btn, path) {
+  const ok = !rlOk.has(path);
+  try {
+    const r = await api('romlib/flag', {path, ok}); rlOk = new Set(r.ok_flags || []);
+    const tr = btn.closest('tr'); tr.classList.toggle('rl-ok', ok); tr.querySelector('.rl-oktag').hidden = !ok; btn.classList.toggle('primary', ok); btn.classList.toggle('ghost', !ok);
+    toast(ok ? 'Segnato come funzionante' : 'Segno tolto', 'ok');
+    if (lastReport) runCheckup();
+  } catch (e) { toast(e.message, 'err'); }
 }
 async function rlTry(btn, path) {
   btn.disabled = true;

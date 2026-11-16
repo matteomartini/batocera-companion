@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.18.5
+- Libreria ROM: flag **✓ Funziona** per i set provati a mano, memorizzato anche dopo nuove analisi; i set segnati non contano più come problema nel Check-up.
+
 1.18.4
 - Libreria ROM → dettagli: per ogni set incompleto/sconosciuto i pulsanti ▶ Prova (avvia il gioco sul cabinato), ⏹ (chiude) e 🗑 (cestino del cabinato).
 

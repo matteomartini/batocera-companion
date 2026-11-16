@@ -2,9 +2,12 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -94,7 +97,7 @@ func (s *Server) hRomlib(w http.ResponseWriter, r *http.Request) (any, error) {
 		if s.romlib.report == nil {
 			return map[string]any{"available": false}, nil
 		}
-		return map[string]any{"available": true, "report": s.romlib.report, "at": s.romlib.at}, nil
+		return map[string]any{"available": true, "report": s.romlib.report, "at": s.romlib.at, "ok_flags": s.romlibFlags()}, nil
 	}
 	script, err := s.asset("rom_inventory.py")
 	if err != nil {
@@ -417,18 +420,36 @@ func (s *Server) romLibFindings() []checkup.Finding {
 		return nil
 	}
 	var out []checkup.Finding
+	okFlags := map[string]bool{}
+	for _, p := range s.romlibFlags() {
+		okFlags[p] = true
+	}
 	for _, sy := range rep.Systems {
 		if sy.Total == 0 {
 			continue
 		}
-		if sy.Incomplete > 0 {
-			var ex []string
-			for _, f := range sy.Files {
-				if f.Status == "incomplete" && len(ex) < 6 {
-					ex = append(ex, f.Path+" ("+f.Detail+")")
-				}
+		// set incompleti, esclusi quelli provati a mano e segnati "funziona"
+		var ex []string
+		inc, flagged := 0, 0
+		for _, f := range sy.Files {
+			if f.Status != "incomplete" {
+				continue
 			}
-			out = append(out, checkup.Finding{ID: "rom.inc." + sy.Name, Area: "rom", Level: "warn", Title: fmt.Sprintf("%s: %d set incompleti", sy.Name, sy.Incomplete), Detail: strings.Join(ex, "\n"), Manual: "Rimpiazzali con set della versione giusta: Aggiungi ROM li verifica prima di copiarli; per MAME usa Giochi → Set MAME."})
+			if okFlags["/userdata/roms/"+sy.Name+"/"+f.Path] {
+				flagged++
+				continue
+			}
+			inc++
+			if len(ex) < 6 {
+				ex = append(ex, f.Path+" ("+f.Detail+")")
+			}
+		}
+		if inc > 0 {
+			t := fmt.Sprintf("%s: %d set incompleti", sy.Name, inc)
+			if flagged > 0 {
+				t += fmt.Sprintf(" (altri %d provati e funzionanti)", flagged)
+			}
+			out = append(out, checkup.Finding{ID: "rom.inc." + sy.Name, Area: "rom", Level: "warn", Title: t, Detail: strings.Join(ex, "\n"), Manual: "Provali dalla Libreria ROM → dettagli (▶ Prova): se girano segnali ✓ Funziona, altrimenti rimpiazzali con set della versione giusta (Aggiungi ROM li verifica prima di copiarli; per MAME usa Giochi → Set MAME)."})
 		}
 		if sy.Unknown > 0 && sy.Verified {
 			out = append(out, checkup.Finding{ID: "rom.unk." + sy.Name, Area: "rom", Level: "info", Title: fmt.Sprintf("%s: %d file non riconosciuti dai DAT", sy.Name, sy.Unknown), Detail: "Dump diversi, hack o traduzioni: non è un errore, ma lo scraper potrebbe non trovarli."})
@@ -457,4 +478,52 @@ func (s *Server) romLibFindings() []checkup.Finding {
 	}
 	out = append(out, checkup.Finding{ID: "rom.total", Area: "rom", Level: "ok", Title: rep.Summary})
 	return out
+}
+
+// Flag "funziona": giochi provati a mano e tenuti anche se il set risulta incompleto.
+func (s *Server) romlibFlagsFile() string { return filepath.Join(s.cfg.Dir(), "romlib-ok.json") }
+
+func (s *Server) romlibFlags() []string {
+	var out []string
+	if b, err := os.ReadFile(s.romlibFlagsFile()); err == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	if out == nil {
+		out = []string{}
+	}
+	return out
+}
+
+func (s *Server) hRomlibFlag(w http.ResponseWriter, r *http.Request) (any, error) {
+	if r.Method != http.MethodPost {
+		return map[string]any{"ok_flags": s.romlibFlags()}, nil
+	}
+	var req struct {
+		Path string `json:"path"`
+		OK   bool   `json:"ok"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return nil, err
+	}
+	if req.Path == "" {
+		return nil, errors.New("percorso mancante")
+	}
+	cur := s.romlibFlags()
+	var out []string
+	for _, p := range cur {
+		if p != req.Path {
+			out = append(out, p)
+		}
+	}
+	if req.OK {
+		out = append(out, req.Path)
+	}
+	if out == nil {
+		out = []string{}
+	}
+	b, _ := json.MarshalIndent(out, "", " ")
+	if err := os.WriteFile(s.romlibFlagsFile(), b, 0o644); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok_flags": out}, nil
 }

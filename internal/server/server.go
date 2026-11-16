@@ -179,6 +179,7 @@ func (s *Server) Handler(local bool) http.Handler {
 	api("checkup", s.hCheckup)
 	api("checkup/fix", s.hCheckupFix)
 	api("romlib", s.hRomlib)
+	api("romlib/flag", s.hRomlibFlag)
 	api("romlib/fix", s.hRomlibFix)
 	api("stutter", s.hStutter)
 	api("stress", s.hStress)
