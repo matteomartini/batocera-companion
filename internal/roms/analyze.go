@@ -646,7 +646,35 @@ func (a *Analyzer) tryArcade(it *Item, name string, dbs []arcadeDB, pool map[uin
 		return true
 	}
 	it.applyCore(bestName)
+	a.dedicated(it, dbs)
 	return true
+}
+
+// dedicated: un set riconosciuto da MAME ma di una scheda con emulatore dedicato in
+// Batocera (Model 2/3, Naomi, Atomiswave, Triforce…) va nella cartella di quel sistema,
+// non in mame, dove non gira.
+func (a *Analyzer) dedicated(it *Item, dbs []arcadeDB) {
+	for _, adb := range dbs {
+		if adb.core != "mame" {
+			continue
+		}
+		sys, why := adb.db.DedicatedSystem(it.SetName)
+		if sys == "" {
+			return
+		}
+		known := a.Info == nil || len(a.Info.Systems) == 0
+		if !known {
+			_, known = a.Info.Systems[sys]
+		}
+		if !known {
+			it.Notes = appendOnce(it.Notes, why+" — su questa Batocera il sistema "+sys+" non risulta: resta in mame")
+			return
+		}
+		it.System = sys
+		it.SystemOptions = uniq(append([]string{sys}, it.SystemOptions...))
+		it.Notes = appendOnce(it.Notes, why)
+		return
+	}
 }
 
 func (ck *setCk) foundCount() int { return len(ck.found) }

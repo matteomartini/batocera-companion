@@ -100,7 +100,7 @@ func (m *Manager) Path(id string) string {
 }
 
 // v2: aggiunti Disks/Devices → cache rigenerata
-func (m *Manager) cachePath(id string) string { return filepath.Join(m.Dir, "cache", id+".v2.gob.gz") }
+func (m *Manager) cachePath(id string) string { return filepath.Join(m.Dir, "cache", id+".v3.gob.gz") }
 
 // Load carica (e mette in cache) un DAT; nil se assente.
 func (m *Manager) Load(id string) (*DB, error) {

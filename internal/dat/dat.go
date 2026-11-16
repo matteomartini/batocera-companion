@@ -37,6 +37,7 @@ type Game struct {
 	Roms     []Rom
 	Devices  []string // device_ref
 	Disks    []string // CHD richiesti (nome senza estensione; nodump esclusi)
+	Source   string   // driver MAME (sourcefile), es. sega/model3.cpp
 	Year     string
 	Manuf    string
 }
@@ -159,6 +160,7 @@ type xmlDev struct {
 }
 type xmlGame struct {
 	Name     string   `xml:"name,attr"`
+	Source   string   `xml:"sourcefile,attr"`
 	CloneOf  string   `xml:"cloneof,attr"`
 	RomOf    string   `xml:"romof,attr"`
 	IsBios   string   `xml:"isbios,attr"`
@@ -208,7 +210,7 @@ func (db *DB) parseXML(r io.Reader) error {
 			if err := dec.DecodeElement(&xg, &se); err != nil {
 				continue
 			}
-			g := &Game{Name: xg.Name, Desc: xg.Desc, CloneOf: xg.CloneOf, RomOf: xg.RomOf, IsBios: xg.IsBios == "yes", IsDevice: xg.IsDevice == "yes", Year: xg.Year, Manuf: xg.Manuf}
+			g := &Game{Name: xg.Name, Desc: xg.Desc, CloneOf: xg.CloneOf, RomOf: xg.RomOf, IsBios: xg.IsBios == "yes", IsDevice: xg.IsDevice == "yes", Year: xg.Year, Manuf: xg.Manuf, Source: xg.Source}
 			for _, xr := range xg.Roms {
 				if xr.Status == "nodump" {
 					continue
@@ -487,3 +489,47 @@ func LoadCache(id, path string) (*DB, error) {
 }
 
 var _ = sync.Mutex{}
+
+// DedicatedSystem: sistema Batocera dedicato per una scheda che in MAME non gira
+// (o gira male) ma ha un emulatore suo: Model 2, Model 3, Naomi/Atomiswave, Triforce…
+// Restituisce "" se il set va bene in mame. bios = romof del parent (awbios, naomi, naomi2…).
+func (db *DB) DedicatedSystem(name string) (system, why string) {
+	g := db.Games[name]
+	if g == nil {
+		return "", ""
+	}
+	root := g
+	for i := 0; i < 5 && root.CloneOf != ""; i++ {
+		p := db.Games[root.CloneOf]
+		if p == nil {
+			break
+		}
+		root = p
+	}
+	src := strings.ToLower(g.Source)
+	switch {
+	case strings.HasSuffix(src, "model3.cpp"):
+		return "model3", "Sega Model 3: in MAME è 'not working', gira con Supermodel (cartella model3)"
+	case strings.HasSuffix(src, "model2.cpp"):
+		return "model2", "Sega Model 2: gira molto meglio con l'emulatore Model 2 (cartella model2)"
+	case strings.HasSuffix(src, "naomi.cpp"):
+		switch root.RomOf {
+		case "awbios":
+			return "atomiswave", "Sammy Atomiswave: gira con Flycast (cartella atomiswave)"
+		case "naomi2":
+			return "naomi2", "Sega Naomi 2: gira con Flycast (cartella naomi2)"
+		case "naomigd":
+			return "naomi", "Sega Naomi GD-ROM: gira con Flycast (cartella naomi, serve anche il CHD)"
+		}
+		return "naomi", "Sega Naomi: gira con Flycast (cartella naomi)"
+	case strings.HasSuffix(src, "triforce.cpp"):
+		return "triforce", "Triforce: gira con Dolphin (cartella triforce)"
+	case strings.HasSuffix(src, "chihiro.cpp"):
+		return "chihiro", "Sega Chihiro: in MAME non gira; serve xemu/cartella chihiro"
+	case strings.HasSuffix(src, "hikaru.cpp"):
+		return "hikaru", "Sega Hikaru: in MAME non gira"
+	case strings.HasSuffix(src, "namcos22.cpp") || strings.HasSuffix(src, "namcos23.cpp"):
+		return "", "" // in MAME girano
+	}
+	return "", ""
+}

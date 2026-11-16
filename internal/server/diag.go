@@ -354,7 +354,17 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 		var cmds []string
 		cmds = append(cmds, "mkdir -p "+backupDir+"; cp /userdata/system/batocera.conf "+backupDir+"/batocera.conf."+time.Now().Format("20060102-150405"))
 		n := 0
+		moved := 0
 		for _, a := range req.Apply {
+			if file, target, ok := strings.Cut(a, ">"); ok && !strings.Contains(a, "=") {
+				if strings.ContainsAny(file, "'\"\n/") || strings.ContainsAny(target, "'\"\n/ ") || target == "" {
+					continue
+				}
+				stem := strings.TrimSuffix(file, ".zip")
+				cmds = append(cmds, "mkdir -p "+q("/userdata/roms/"+target)+" && mv -f "+q("/userdata/roms/"+sys+"/"+file)+" "+q("/userdata/roms/"+target+"/")+"; [ -d "+q("/userdata/roms/"+sys+"/"+stem)+" ] && mv -f "+q("/userdata/roms/"+sys+"/"+stem)+" "+q("/userdata/roms/"+target+"/")+"; bc_del "+q(sys+`["`+file+`"].core`)+"; bc_del "+q(sys+`["`+file+`"].emulator`)+"; true")
+				moved++
+				continue
+			}
 			file, core, ok := strings.Cut(a, "=")
 			if !ok || strings.ContainsAny(file, "'\"\n") {
 				continue
@@ -374,7 +384,10 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 			return nil, err
 		}
 		s.invalidateInfo()
-		return map[string]any{"applied": n}, nil
+		if moved > 0 {
+			_ = s.es.ReloadGames()
+		}
+		return map[string]any{"applied": n, "moved": moved}, nil
 	}
 	j := s.jobs.Start("Controllo core "+sys, func(j *jobs.Job) (any, error) {
 		j.SetProgress(-1, "Leggo i CRC di tutti gli zip in roms/"+sys)
@@ -526,9 +539,19 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 					}
 				}
 			}
+			wrongSys, wrongWhy := "", ""
+			if loaded["mame"] {
+				if db, _ := s.dats.Load("mame"); db != nil {
+					if t, w := db.DedicatedSystem(stem); t != "" && t != sys {
+						wrongSys, wrongWhy = t, w
+					}
+				}
+			}
 			switch {
 			case !known:
 				rw.Status, rw.Note = "unknown", "nome non presente in nessun DAT (non è un set arcade?)"
+			case wrongSys != "":
+				rw.Status, rw.Best, rw.Note = "wrong_system", wrongSys, wrongWhy
 			case isBios:
 				rw.Status, rw.Note = "ok", "BIOS"
 			case anyHave == 0:
