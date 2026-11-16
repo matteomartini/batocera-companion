@@ -126,7 +126,19 @@ func (m *Manager) Load(id string) (*DB, error) {
 	}
 	db, err := Parse(id, p)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", id, err)
+		// file sorgente rovinato (download interrotto, 0 byte…): usa una cache precedente se c'è
+		for _, old := range []string{filepath.Join(m.Dir, "cache", id+".v2.gob.gz"), filepath.Join(m.Dir, "cache", id+".gob.gz")} {
+			if odb, oerr := LoadCache(id, old); oerr == nil && odb != nil {
+				m.mu.Lock()
+				m.dbs[id] = odb
+				m.mu.Unlock()
+				return odb, nil
+			}
+		}
+		if st != nil && st.Size() < 1024 {
+			return nil, fmt.Errorf("%s: il file del DAT è vuoto o troncato (%d byte): riscaricalo dalla scheda Database", id, st.Size())
+		}
+		return nil, fmt.Errorf("%s: DAT non leggibile (%v): riscaricalo dalla scheda Database", id, err)
 	}
 	go func() { _ = db.SaveCache(cp) }()
 	m.mu.Lock()

@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.7
+- DAT: se il file sorgente è vuoto o troncato (errore "EOF") viene usata la cache precedente e il messaggio dice quale DAT riscaricare dalla scheda Database.
+
 1.19.6
 - I set di schede con emulatore dedicato in Batocera (Sega Model 2 → model2, Model 3 → model3/Supermodel, Naomi/Naomi 2/Atomiswave → Flycast, Triforce → Dolphin) non vengono più messi in mame, dove non girano: Aggiungi ROM li manda nella cartella giusta, e "Controlla tutti i set" segnala quelli già in mame con "sistema sbagliato" e li sposta (con sottocartella CHD e tolto l'eventuale core per gioco).
 
