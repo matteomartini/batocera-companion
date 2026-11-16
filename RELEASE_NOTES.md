@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.4
+- Giochi → **Controlla tutti i set** (cartelle arcade): per ogni zip dice se è un set conosciuto, se è completo per il core in uso, per quale core lo è, se è un BIOS, se è vuoto, o se "non è questo gioco" (nome da set arcade ma nessun file corrisponde: ROM console finita in mame). Con un clic imposta il core giusto gioco per gioco (batocera.conf salvato prima).
+
 1.19.3
 - Pulsanti volume: opzione "Solo il controller su cui li ho rilevati" (porta USB): con due zero delay identici i pulsanti con lo stesso numero sull'altro encoder non toccano più il volume.
 

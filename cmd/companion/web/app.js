@@ -460,6 +460,28 @@ function rlDetail(sys) {
   const nOk = rows.filter(f => rlOk.has(full(f))).length;
   dlg(`<p><b>${esc(sys)}</b>: ${rows.length} file da controllare${nOk ? ` · ${nOk} già provati e funzionanti` : ''}</p><p class="hint">▶ Prova avvia il gioco sul cabinato così com'è: se parte e gira, segnalo ✓ Funziona e resta memorizzato (anche dopo una nuova analisi); se non parte, 🗑 lo sposta nel cestino del cabinato.</p><div style="max-height:60vh;overflow:auto"><table class="tbl"><thead><tr><th>File</th><th>Stato</th><th>Note</th><th></th></tr></thead><tbody>${rows.map(f => `<tr data-rl="${esc(full(f))}" class="${rlOk.has(full(f)) ? 'rl-ok' : ''}"><td class="mono">${esc(f.path)}</td><td><span class="tag ${f.status === 'incomplete' ? 'err' : 'miss'}">${lab[f.status] || f.status}</span> <span class="tag ok rl-oktag" ${rlOk.has(full(f)) ? '' : 'hidden'}>funziona</span></td><td class="hint">${esc(f.name || '')} ${esc(f.detail || '')}${f.missing ? ` (mancano ${f.missing})` : ''}</td><td class="nowrap"><button class="btn sm" title="Avvia sul cabinato" onclick="rlTry(this, '${esc(full(f))}')">▶ Prova</button> <button class="btn sm ghost" title="Perché non parte?" onclick="gameDiag('${esc(sys)}', '${esc(full(f))}')">🩺</button> <button class="btn sm ghost" title="Chiudi il gioco sul cabinato" onclick="cmd('emukill')">⏹</button> <button class="btn sm ${rlOk.has(full(f)) ? 'primary' : 'ghost'}" title="Segna come provato e funzionante" onclick="rlFlag(this, '${esc(full(f))}')">✓ Funziona</button> <button class="btn sm ghost" title="Sposta nel cestino del cabinato" onclick="rlTrash(this, '${esc(sys)}', '${esc(full(f))}')">🗑</button></td></tr>`).join('')}</tbody></table></div>`, 'Chiudi');
 }
+async function gamesDiagAll() {
+  const sys = $('#g-sys').value; if (!sys) return;
+  $('#g-job').hidden = false; $('#g-log').textContent = '';
+  let res;
+  try { const r = await api('games/diagall', {system: sys}); res = (await pollJob(r.job, bindJobUI('g'))).result; }
+  catch (e) { $('#g-job').hidden = true; return toast(e.message, 'err'); }
+  $('#g-job').hidden = true;
+  const c = res.counts || {}, rows = res.rows || [];
+  const lab = {ok: ['ok', 'OK'], wrong_core: ['err', 'core sbagliato'], incomplete: ['err', 'incompleto'], unknown: ['miss', 'sconosciuto'], mismatch: ['err', 'non è questo gioco'], nodat: ['miss', 'DAT mancante'], empty: ['err', 'zip vuoto'], error: ['err', 'errore']};
+  const bad = rows.filter(r => r.status !== 'ok');
+  const html = `<p><b>${esc(sys)}</b>: ${rows.length} zip · <span class="tag ok">${c.ok || 0} ok</span> <span class="tag err">${c.wrong_core || 0} core sbagliato</span> <span class="tag err">${c.incomplete || 0} incompleti</span> <span class="tag miss">${c.unknown || 0} sconosciuti</span> ${c.mismatch ? `<span class="tag err">${c.mismatch} non arcade</span>` : ''} ${c.empty ? `<span class="tag err">${c.empty} vuoti</span>` : ''}</p>
+    <p class="hint">Core del sistema: <b>${esc(res.sys_core)}</b>. "Core sbagliato" = il set non è completo per il core in uso ma lo è per un altro installato: spuntalo e premi Applica per impostare quel core solo per quel gioco. "Sconosciuto" = nessun DAT arcade conosce un set con quel nome. "Non è questo gioco" = il nome coincide con un set arcade ma nessun file dentro lo zip corrisponde: è un'altra cosa (tipicamente una ROM console zippata) finita nella cartella sbagliata. "Incompleto" = manca qualcosa per tutti i core: serve lo zip giusto (Aggiungi ROM lo ricostruisce se trova i file).</p>
+    <div style="max-height:55vh;overflow:auto"><table class="tbl" id="diagall"><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="$$('#diagall .da-ck').forEach(x => x.checked = this.checked)"></th><th>File</th><th>Stato</th><th>Core in uso</th><th>Dettaglio</th></tr></thead><tbody>${bad.map(r => `<tr><td>${r.status === 'wrong_core' ? `<input type="checkbox" class="da-ck" data-file="${esc(r.file)}" data-core="${esc(r.best)}" checked>` : ''}</td><td class="mono">${esc(r.file)}</td><td><span class="tag ${lab[r.status][0]}">${lab[r.status][1]}</span></td><td>${esc(r.current)}${r.override ? ' <span class="muted">(per gioco)</span>' : ''}</td><td class="hint">${esc(r.note)}${r.status === 'wrong_core' ? ` → <b>${esc(r.best)}</b>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Tutti i set sono completi per il core in uso.</td></tr>'}</tbody></table></div>
+    ${(c.wrong_core || 0) ? '<div class="btns" style="margin-top:8px"><button class="btn primary" onclick="gamesDiagApply()">🔧 Applica il core consigliato ai selezionati</button></div>' : ''}`;
+  await dlg(html, 'Chiudi');
+}
+async function gamesDiagApply() {
+  const apply = $$('#diagall .da-ck').filter(x => x.checked).map(x => x.dataset.file + '=' + x.dataset.core);
+  if (!apply.length) return toast('Niente selezionato', 'err');
+  try { const r = await api('games/diagall', {system: $('#g-sys').value, apply}); toast(r.applied + ' giochi impostati sul core giusto (batocera.conf salvato prima)', 'ok'); dlgClose(true); }
+  catch (e) { toast(e.message, 'err'); }
+}
 async function gameDiag(sys, path) {
   const name = path.split('/').pop();
   const box = `<p><b>Perché non parte? — ${esc(name)}</b> <span class="muted">(${esc(sys)})</span></p><div id="diag-out"><div class="jobline"><span id="diag-step">Controllo set, core e BIOS, poi avvio il gioco per 12 s…</span></div><div class="bar big"><i class="indet"></i></div></div>`;

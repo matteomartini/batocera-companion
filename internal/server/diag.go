@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -290,4 +291,212 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// Diagnosi di massa (senza avvio): per tutti gli zip arcade di una cartella,
+// per ogni core: set completo? BIOS presente? Propone il core per gioco.
+const zipCrcAllPy = `import sys, zipfile, json, os
+d=sys.argv[1]; out={}
+for n in sorted(os.listdir(d)):
+    if not n.lower().endswith('.zip'): continue
+    p=os.path.join(d,n)
+    try:
+        z=zipfile.ZipFile(p); out[n]=[i.CRC for i in z.infolist()]
+    except Exception as e: out[n]={"error":str(e)}
+print(json.dumps(out))`
+
+func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, error) {
+	var req struct {
+		System string   `json:"system"`
+		Apply  []string `json:"apply"` // "file.zip=core" da applicare
+	}
+	if err := readJSON(r, &req); err != nil {
+		return nil, err
+	}
+	if req.System == "" || !isArcadeSys(req.System) {
+		return nil, errors.New("funziona per le cartelle arcade (mame, fbneo, neogeo, cps…)")
+	}
+	sys := req.System
+	q := cab.ShellQuote
+	if len(req.Apply) > 0 {
+		var cmds []string
+		cmds = append(cmds, "mkdir -p "+backupDir+"; cp /userdata/system/batocera.conf "+backupDir+"/batocera.conf."+time.Now().Format("20060102-150405"))
+		n := 0
+		for _, a := range req.Apply {
+			file, core, ok := strings.Cut(a, "=")
+			if !ok || strings.ContainsAny(file, "'\"\n") {
+				continue
+			}
+			emu := "libretro"
+			if core == "mame" {
+				emu = "mame"
+			}
+			if core == "" {
+				cmds = append(cmds, "bc_del "+q(sys+`["`+file+`"].core`), "bc_del "+q(sys+`["`+file+`"].emulator`))
+			} else {
+				cmds = append(cmds, "bc_set "+q(sys+`["`+file+`"].emulator`)+" "+emu, "bc_set "+q(sys+`["`+file+`"].core`)+" "+core)
+			}
+			n++
+		}
+		if _, err := s.ssh.RunTimeout(strings.Join(cmds, "\n"), 5*time.Minute); err != nil {
+			return nil, err
+		}
+		s.invalidateInfo()
+		return map[string]any{"applied": n}, nil
+	}
+	j := s.jobs.Start("Controllo core "+sys, func(j *jobs.Job) (any, error) {
+		j.SetProgress(-1, "Leggo i CRC di tutti gli zip in roms/"+sys)
+		res, err := s.ssh.RunCtx(j.Context(), "python3 -c "+q(zipCrcAllPy)+" "+q("/userdata/roms/"+sys)+"; echo '@@conf'; grep -E "+q("^"+regexp.QuoteMeta(sys)+`\[`)+" /userdata/system/batocera.conf 2>/dev/null; echo '@@cores'; ls /usr/lib/libretro/ 2>/dev/null | sed 's/_libretro.so//' | tr '\\n' ' '; echo '@@sysconf'; grep -E "+q("^"+regexp.QuoteMeta(sys)+`\.(core|emulator)=`)+" /userdata/system/batocera.conf 2>/dev/null", 20*time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		sec := cab.SplitSections(res.Stdout)
+		// la prima sezione (prima di @@conf) è il JSON
+		jsonPart := res.Stdout
+		if i := strings.Index(jsonPart, "@@conf"); i >= 0 {
+			jsonPart = jsonPart[:i]
+		}
+		var all map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(jsonPart)), &all); err != nil {
+			return nil, fmt.Errorf("lettura zip: %v", err)
+		}
+		cores := strings.Fields(sec["cores"])
+		overrides := map[string]string{}
+		for _, l := range cab.Lines(sec["conf"]) {
+			k, v, ok := strings.Cut(l, "=")
+			if ok && strings.HasSuffix(k, "].core") {
+				if a := strings.Index(k, `["`); a >= 0 {
+					if b := strings.Index(k[a+2:], `"]`); b >= 0 {
+						overrides[k[a+2:a+2+b]] = strings.TrimSpace(v)
+					}
+				}
+			}
+		}
+		sysCore := map[string]string{"fbneo": "fbneo", "mame": "mame", "neogeo": "fbneo", "cps1": "fbneo", "cps2": "fbneo", "cps3": "fbneo"}[sys]
+		for _, l := range cab.Lines(sec["sysconf"]) {
+			if k, v, ok := strings.Cut(l, "="); ok && k == sys+".core" && strings.TrimSpace(v) != "" {
+				sysCore = strings.TrimSpace(v)
+			}
+		}
+		dbs := []string{"fbneo", "mame", "mame2015", "mame2010", "mame2003_plus"}
+		loaded := map[string]bool{}
+		for _, id := range dbs {
+			if db, _ := s.dats.Load(id); db != nil {
+				loaded[id] = true
+			}
+		}
+		names := make([]string, 0, len(all))
+		for n := range all {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		present := map[string]bool{}
+		for _, n := range names {
+			present[strings.ToLower(n)] = true
+		}
+		type row struct {
+			File     string            `json:"file"`
+			Current  string            `json:"current"`  // core in uso (override o sistema)
+			Override bool              `json:"override"` // c'è un core per gioco
+			Status   string            `json:"status"`   // ok | wrong_core | incomplete | unknown | empty | error
+			Best     string            `json:"best"`     // core consigliato
+			Cores    map[string]string `json:"cores"`    // core → "ok" | "mancano N/M" | "no bios X" | "n/d"
+			Note     string            `json:"note"`
+		}
+		var rows []row
+		counts := map[string]int{}
+		for i, n := range names {
+			j.SetProgress(float64(i)/float64(len(names)), n)
+			stem := strings.ToLower(strings.TrimSuffix(n, ".zip"))
+			rw := row{File: n, Cores: map[string]string{}}
+			rw.Current = sysCore
+			if c, ok := overrides[n]; ok {
+				rw.Current, rw.Override = c, true
+			}
+			if m, ok := all[n].(map[string]any); ok {
+				rw.Status, rw.Note = "error", fmt.Sprint(m["error"])
+				rows = append(rows, rw)
+				counts["error"]++
+				continue
+			}
+			crcs, _ := all[n].([]any)
+			if len(crcs) == 0 {
+				rw.Status, rw.Note = "empty", "zip vuoto"
+				rows = append(rows, rw)
+				counts["empty"]++
+				continue
+			}
+			have := map[uint32]bool{}
+			for _, c := range crcs {
+				if f, ok := c.(float64); ok {
+					have[uint32(f)] = true
+				}
+			}
+			known := false
+			isBios := false
+			anyHave := 0
+			for _, id := range dbs {
+				if !loaded[id] {
+					continue
+				}
+				db, _ := s.dats.Load(id)
+				h, t, missing, bios, ok := roms.SetMissing(db, stem, have)
+				if !ok {
+					continue
+				}
+				known = true
+				if h > anyHave {
+					anyHave = h
+				}
+				installed := contains(cores, id) || id == "mame"
+				if db.Games[stem].IsBios {
+					rw.Cores[id] = "bios"
+					isBios = true
+					continue
+				}
+				switch {
+				case !installed:
+					rw.Cores[id] = "non installato"
+				case len(missing) > 0:
+					rw.Cores[id] = fmt.Sprintf("mancano %d/%d", len(missing), t)
+				case bios != "" && !present[bios+".zip"]:
+					rw.Cores[id] = "manca " + bios + ".zip"
+				default:
+					_ = h
+					rw.Cores[id] = "ok"
+					if rw.Best == "" {
+						rw.Best = id
+					}
+				}
+			}
+			switch {
+			case !known:
+				rw.Status, rw.Note = "unknown", "nome non presente in nessun DAT (non è un set arcade?)"
+			case isBios:
+				rw.Status, rw.Note = "ok", "BIOS"
+			case anyHave == 0:
+				rw.Status, rw.Note = "mismatch", "nessun file dentro lo zip corrisponde al set arcade con questo nome: quasi certamente non è un gioco arcade (ROM console o file rinominato)"
+			case !loaded[rw.Current]:
+				rw.Status, rw.Note = "nodat", "DAT del core "+rw.Current+" non disponibile sul PC (scheda Database)"
+			case rw.Cores[rw.Current] == "ok":
+				rw.Status = "ok"
+			case rw.Best != "":
+				rw.Status = "wrong_core"
+				rw.Note = "incompleto per " + rw.Current + " (" + rw.Cores[rw.Current] + "), completo per " + rw.Best
+			default:
+				rw.Status = "incomplete"
+				parts := []string{}
+				for _, id := range dbs {
+					if v, ok := rw.Cores[id]; ok {
+						parts = append(parts, id+": "+v)
+					}
+				}
+				rw.Note = strings.Join(parts, " · ")
+			}
+			counts[rw.Status]++
+			rows = append(rows, rw)
+		}
+		return map[string]any{"system": sys, "rows": rows, "counts": counts, "sys_core": sysCore}, nil
+	})
+	return map[string]any{"job": j.ID}, nil
 }
