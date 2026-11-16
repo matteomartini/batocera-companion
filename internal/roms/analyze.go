@@ -625,6 +625,9 @@ func (a *Analyzer) tryArcade(it *Item, name string, dbs []arcadeDB, pool map[uin
 			break
 		}
 	}
+	if a.dedicated(it, dbs) {
+		return true
+	}
 	if bestName == "" {
 		// nessun core completo: prendo il migliore per segnalare cosa manca
 		best := -1
@@ -646,35 +649,37 @@ func (a *Analyzer) tryArcade(it *Item, name string, dbs []arcadeDB, pool map[uin
 		return true
 	}
 	it.applyCore(bestName)
-	a.dedicated(it, dbs)
 	return true
 }
 
 // dedicated: un set riconosciuto da MAME ma di una scheda con emulatore dedicato in
 // Batocera (Model 2/3, Naomi, Atomiswave, Triforce…) va nella cartella di quel sistema,
-// non in mame, dove non gira.
-func (a *Analyzer) dedicated(it *Item, dbs []arcadeDB) {
+// non in mame, dove non gira. Quegli emulatori hanno set propri (spesso uguali ai MAME):
+// lo zip viene copiato così com'è, senza pretendere che sia completo per MAME.
+func (a *Analyzer) dedicated(it *Item, dbs []arcadeDB) bool {
 	for _, adb := range dbs {
 		if adb.core != "mame" {
 			continue
 		}
 		sys, why := adb.db.DedicatedSystem(it.SetName)
 		if sys == "" {
-			return
+			return false
 		}
-		known := a.Info == nil || len(a.Info.Systems) == 0
-		if !known {
-			_, known = a.Info.Systems[sys]
-		}
-		if !known {
-			it.Notes = appendOnce(it.Notes, why+" — su questa Batocera il sistema "+sys+" non risulta: resta in mame")
-			return
-		}
+		// Batocera x86_64 ha tutti questi sistemi: la cartella viene creata se manca
+		it.Kind = "arcade"
 		it.System = sys
-		it.SystemOptions = uniq(append([]string{sys}, it.SystemOptions...))
+		it.SystemOptions = uniq(append([]string{sys, "mame"}, it.SystemOptions...))
+		it.Core = ""
+		it.DestName = it.SetName + ".zip"
+		it.Action = "copy"
+		it.Files = nil
+		it.Missing = nil
+		it.Confidence = "green"
 		it.Notes = appendOnce(it.Notes, why)
-		return
+		it.Notes = appendOnce(it.Notes, "copiato così com'è: l'emulatore dedicato ha requisiti propri sui file (non quelli di MAME)")
+		return true
 	}
+	return false
 }
 
 func (ck *setCk) foundCount() int { return len(ck.found) }

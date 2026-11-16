@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.9
+- Aggiungi ROM: i set Model 2/3, Naomi, Atomiswave, Triforce vanno nel sistema dedicato anche se risultano "incompleti" per MAME (quegli emulatori hanno requisiti propri): copiati così come sono, con la scelta mame in alternativa.
+
 1.19.8
 - Comandi lunghi verso il cabinato (es. "Applica" su molti giochi, correzioni in blocco): lo sshd di Batocera (Dropbear) rifiuta comandi oltre ~9 KB e il Companion rispondeva "EOF". Ora i comandi lunghi vengono caricati come script temporaneo ed eseguiti da lì.
 
