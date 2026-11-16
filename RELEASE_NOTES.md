@@ -1,5 +1,9 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.18.3
+- Backup USB: "Calcola dimensioni" funziona anche sul disco collegato al cabinato (rsync a secco: totale e byte da copiare per categoria); il backup mostra avanzamento reale con categoria, MB copiati/totali, velocità e tempo mancante.
+- Tutte le barre di avanzamento mostrano percentuale e stima del tempo rimanente.
+
 1.18.2
 - Backup USB: i dischi montati da Batocera in /media non comparivano perché il controllo usava `mountpoint`, assente su Batocera; ora legge /proc/mounts.
 

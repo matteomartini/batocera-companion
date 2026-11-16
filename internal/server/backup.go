@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -437,10 +439,16 @@ if awk -v m="$mp" '$2==m{f=1}END{exit !f}' /proc/mounts; then echo "OK $mp $(fin
 	if !strings.HasPrefix(req.Mount, "/media/") || strings.Contains(req.Mount, "..") {
 		return nil, errors.New("disco non valido")
 	}
+	if req.Action != "scan" && req.Action != "backup" && req.Action != "restore" {
+		return nil, errors.New("azione non valida")
+	}
 	j := s.jobs.Start("Backup USB", func(j *jobs.Job) (any, error) {
 		dest := req.Mount + "/batocera-backup"
-		var cmds []string
-		cmds = append(cmds, "mkdir -p "+cab.ShellQuote(dest)+" || exit 5")
+		type step struct {
+			cat, rel, src, dst, del string
+			ex                      []string
+		}
+		var steps []step
 		for _, c := range req.Cats {
 			bc := bkCat_(c)
 			if bc == nil {
@@ -462,26 +470,142 @@ if awk -v m="$mp" '$2==m{f=1}END{exit !f}' /proc/mounts; then echo "OK $mp $(fin
 					src, dst = dest+"/"+rel+"/", "/userdata/"+rel+"/"
 					del = ""
 				}
-				cmds = append(cmds, fmt.Sprintf("[ -d %s ] && { mkdir -p %s; echo '@@ %s'; rsync -rlt --modify-window=2 --info=progress2 --no-inc-recursive%s %s %s %s 2>&1 | tr '\\r' '\\n' | grep -E '%%|error|failed' | tail -3; echo \"rc=${PIPESTATUS[0]}\"; }; true", cab.ShellQuote(src), cab.ShellQuote(dst), rel, del, strings.Join(ex, " "), cab.ShellQuote(src), cab.ShellQuote(dst)))
+				steps = append(steps, step{c, rel, src, dst, del, ex})
 			}
 		}
-		if req.Action == "backup" {
-			info, _ := json.Marshal(bkInfo{Date: time.Now(), Categories: req.Cats, Host: s.cfg.Host})
-			cmds = append(cmds, "echo "+cab.ShellQuote(string(info))+" > "+cab.ShellQuote(dest+"/backup-info.json"))
+		// 1) prova a secco: dimensione totale e byte da copiare per categoria
+		j.SetProgress(-1, "Calcolo dimensioni sul cabinato")
+		var dry []string
+		dry = append(dry, "mkdir -p "+cab.ShellQuote(dest)+" || exit 5")
+		for _, st := range steps {
+			dry = append(dry, fmt.Sprintf("echo '@@ %s %s'; [ -d %s ] && rsync -rlt --modify-window=2 --dry-run --stats%s %s %s %s 2>&1 | grep -E '^(Number of regular files transferred|Total transferred file size|Total file size|Number of files)'; true", st.cat, st.rel, cab.ShellQuote(st.src), st.del, strings.Join(st.ex, " "), cab.ShellQuote(st.src), cab.ShellQuote(st.dst)))
 		}
-		j.SetProgress(-1, "rsync in corso sul cabinato (la rete non viene usata)")
-		res, err := s.ssh.RunCtx(j.Context(), strings.Join(cmds, "\n"), 12*time.Hour)
+		res, err := s.ssh.RunCtx(j.Context(), strings.Join(dry, "\n"), time.Hour)
 		if err != nil {
 			return nil, err
 		}
-		bad := false
-		for _, l := range cab.Lines(res.Stdout) {
-			j.Logf("%s", l)
-			if strings.HasPrefix(l, "rc=") && l != "rc=0" {
-				bad = true
-				if l == "rc=127" {
-					return nil, errors.New("rsync non presente su questa Batocera")
+		if res.Exit == 127 {
+			return nil, errors.New("rsync non presente su questa Batocera")
+		}
+		sizes := map[string]map[string]any{}
+		todo := map[string]int64{} // byte da copiare per passo (cat/rel)
+		var totalTodo int64
+		cur := ""
+		num := func(l string) int64 {
+			f := strings.Fields(strings.ReplaceAll(l, ",", ""))
+			for i := len(f) - 1; i >= 0; i-- {
+				if n, err := strconv.ParseInt(strings.TrimSuffix(f[i], ","), 10, 64); err == nil {
+					return n
 				}
+			}
+			return 0
+		}
+		for _, l := range cab.Lines(res.Stdout) {
+			if strings.HasPrefix(l, "@@ ") {
+				f := strings.Fields(l)
+				cur = f[1] + "/" + f[2]
+				if sizes[f[1]] == nil {
+					sizes[f[1]] = map[string]any{"bytes": int64(0), "files": int64(0), "todo_bytes": int64(0), "todo_files": int64(0)}
+				}
+				continue
+			}
+			if cur == "" {
+				continue
+			}
+			cat := strings.SplitN(cur, "/", 2)[0]
+			m := sizes[cat]
+			switch {
+			case strings.HasPrefix(l, "Total file size"):
+				m["bytes"] = m["bytes"].(int64) + num(l)
+			case strings.HasPrefix(l, "Number of files"):
+				// "Number of files: 1,234 (reg: 1,200, dir: 34)"
+				m["files"] = m["files"].(int64) + num(strings.SplitN(strings.ReplaceAll(l, ",", ""), "(", 2)[0])
+			case strings.HasPrefix(l, "Total transferred file size"):
+				n := num(l)
+				m["todo_bytes"] = m["todo_bytes"].(int64) + n
+				todo[cur] += n
+				totalTodo += n
+			case strings.HasPrefix(l, "Number of regular files transferred"):
+				m["todo_files"] = m["todo_files"].(int64) + num(l)
+			}
+		}
+		for c, m := range sizes {
+			m["human"] = humanB(m["bytes"].(int64))
+			m["todo_human"] = humanB(m["todo_bytes"].(int64))
+			j.Logf("%s: %d file, %s (da copiare: %d file, %s)", c, m["files"], m["human"], m["todo_files"], m["todo_human"])
+		}
+		if req.Action == "scan" {
+			out := map[string]any{}
+			for c, m := range sizes {
+				out[c] = m
+			}
+			return out, nil
+		}
+		// 2) rsync vero, con avanzamento in streaming
+		var script []string
+		for _, st := range steps {
+			script = append(script, fmt.Sprintf("echo '@@ %s %s'; [ -d %s ] && { mkdir -p %s; rsync -rlt --modify-window=2 --info=progress2 --no-inc-recursive%s %s %s %s 2>&1 | tr '\\r' '\\n'; echo \"rc=${PIPESTATUS[0]}\"; }; true", st.cat, st.rel, cab.ShellQuote(st.src), cab.ShellQuote(st.dst), st.del, strings.Join(st.ex, " "), cab.ShellQuote(st.src), cab.ShellQuote(st.dst)))
+		}
+		if req.Action == "backup" {
+			info, _ := json.Marshal(bkInfo{Date: time.Now(), Categories: req.Cats, Host: s.cfg.Host})
+			script = append(script, "echo "+cab.ShellQuote(string(info))+" > "+cab.ShellQuote(dest+"/backup-info.json"))
+		}
+		rc, err := s.ssh.StreamSession(strings.Join(script, "\n"))
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		var doneBefore int64
+		cur = ""
+		bad := false
+		started := time.Now()
+		sc := bufio.NewScanner(rc)
+		sc.Buffer(make([]byte, 1<<20), 1<<20)
+		for sc.Scan() {
+			if j.Cancelled() {
+				_, _ = s.ssh.RunTimeout("pkill -x rsync; true", 10*time.Second)
+				return nil, errors.New("annullato")
+			}
+			l := strings.TrimSpace(sc.Text())
+			if l == "" {
+				continue
+			}
+			if strings.HasPrefix(l, "@@ ") {
+				f := strings.Fields(l)
+				cur = f[1] + "/" + f[2]
+				j.Logf("▶ %s", cur)
+				continue
+			}
+			if strings.HasPrefix(l, "rc=") {
+				doneBefore += todo[cur]
+				if l != "rc=0" {
+					bad = true
+					j.Logf("  %s", l)
+				}
+				continue
+			}
+			// riga progress2: "  1,234,567  45%  12.34MB/s  0:01:23 (xfr#12, to-chk=0/345)"
+			f := strings.Fields(strings.ReplaceAll(l, ",", ""))
+			if len(f) >= 4 && strings.HasSuffix(f[1], "%") {
+				n, _ := strconv.ParseInt(f[0], 10, 64)
+				done := doneBefore + n
+				frac := float64(-1)
+				eta := ""
+				if totalTodo > 0 {
+					frac = float64(done) / float64(totalTodo)
+					if frac > 0.999 {
+						frac = 0.999
+					}
+					if el := time.Since(started).Seconds(); el > 3 && done > 0 {
+						rem := time.Duration(el * float64(totalTodo-done) / float64(done) * float64(time.Second))
+						eta = " · mancano " + humanDur(rem)
+					}
+				}
+				j.SetProgress(frac, fmt.Sprintf("%s · %s / %s · %s%s", cur, humanB(done), humanB(totalTodo), f[2], eta))
+				continue
+			}
+			if strings.Contains(l, "error") || strings.Contains(l, "failed") {
+				j.Logf("  %s", l)
 			}
 		}
 		if bad {
@@ -490,7 +614,20 @@ if awk -v m="$mp" '$2==m{f=1}END{exit !f}' /proc/mounts; then echo "OK $mp $(fin
 		if req.Action == "restore" {
 			_ = s.es.ReloadGames()
 		}
+		j.Logf("Completato in %s", humanDur(time.Since(started)))
 		return nil, nil
 	})
 	return map[string]any{"job": j.ID}, nil
+}
+
+func humanDur(d time.Duration) string {
+	s := int(d.Seconds())
+	switch {
+	case s < 60:
+		return fmt.Sprintf("%d s", s)
+	case s < 3600:
+		return fmt.Sprintf("%d min %02d s", s/60, s%60)
+	default:
+		return fmt.Sprintf("%d h %02d min", s/3600, (s%3600)/60)
+	}
 }

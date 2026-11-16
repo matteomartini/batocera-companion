@@ -205,10 +205,23 @@ function pollJob(id, onTick) {
   });
 }
 function bindJobUI(prefix) {
+  const t0 = Date.now(); let p0 = null, t1 = 0, lastEta = null;
   return j => {
-    const bar = $('#' + prefix + '-bar'), step = $('#' + prefix + '-step'), log = $('#' + prefix + '-log');
+    const bar = $('#' + prefix + '-bar'), step = $('#' + prefix + '-step'), log = $('#' + prefix + '-log'), pct = $('#' + prefix + '-pct');
     if (bar) { bar.classList.toggle('indet', j.progress < 0); bar.style.width = j.progress < 0 ? '' : Math.round(j.progress * 100) + '%'; }
-    if (step) step.textContent = j.step || '';
+    let extra = '';
+    if (j.progress >= 0) {
+      // percentuale e stima del tempo mancante (dal ritmo osservato finora)
+      if (p0 === null && j.progress > 0) { p0 = j.progress; t1 = Date.now(); }
+      const el = (Date.now() - (t1 || t0)) / 1000, adv = j.progress - (p0 || 0);
+      if (el > 4 && adv > 0.005 && j.progress < 1) {
+        const rem = el * (1 - j.progress) / adv; lastEta = lastEta === null ? rem : lastEta * 0.7 + rem * 0.3;
+        const r = Math.round(lastEta), txt = r < 60 ? r + ' s' : r < 3600 ? Math.round(r / 60) + ' min' : Math.floor(r / 3600) + ' h ' + String(Math.round((r % 3600) / 60)).padStart(2, '0') + ' min';
+        extra = Math.round(j.progress * 100) + '% · ~' + txt + ' rimanenti';
+      } else extra = Math.round(j.progress * 100) + '%';
+    }
+    if (pct) pct.textContent = extra;
+    if (step) step.textContent = (j.step || '') + (extra && !pct && !/mancano|\d+%/.test(j.step || '') ? '  ·  ' + extra : '');
     if (log && j.log) { log.textContent = j.log.join('\n'); log.scrollTop = log.scrollHeight; }
   };
 }
@@ -988,9 +1001,11 @@ async function bkPick() {
 }
 async function bkScan() {
   const cats = bkCats(); if (!cats.length) return toast('Scegli almeno una categoria', 'err');
+  const usb = $('#bk-target').value === 'usb';
+  if (usb && !$('#bk-usb').value) return toast('Scegli il disco USB', 'err');
   $('#bk-job').hidden = false; $('#bk-log').textContent = ''; $('#bk-job-title').textContent = 'Calcolo dimensioni';
   try {
-    const r = await api('backup', {action: 'scan', dir: $('#bk-dir').value.trim(), cats});
+    const r = usb ? await api('backup/usb', {action: 'scan', mount: $('#bk-usb').value, cats}) : await api('backup', {action: 'scan', dir: $('#bk-dir').value.trim(), cats});
     const res = await pollJob(r.job, bindJobUI('bk'));
     const sizes = (res && res.result) || res || {};
     Object.entries(sizes).forEach(([id, v]) => { const el = $(`#bk-size-${id}`); if (el && v.human) el.textContent = v.human + (v.todo_files ? ' · da copiare ' + v.todo_human : ' · aggiornato'); });
