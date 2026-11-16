@@ -425,6 +425,8 @@ async function rlRun() {
 }
 function rlRender(at) {
   const rep = rlReport; if (!rep) return;
+  rep.systems = rep.systems || []; rep.discs = rep.discs || []; rep.overrides = rep.overrides || []; rep.duplicates = rep.duplicates || [];
+  rep.systems.forEach(s => { s.files = s.files || []; });
   const noM3U = rep.discs.filter(g => !g.has_m3u).length, badCores = rep.overrides.filter(o => !o.installed).length;
   $('#rl-fix-md').hidden = rep.discs.length === 0; $('#rl-fix-cores').hidden = badCores === 0;
   $('#rl-fix-bios').hidden = !rep.systems.some(s => s.files.some(f => f.set));

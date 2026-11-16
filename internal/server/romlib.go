@@ -150,7 +150,7 @@ func (s *Server) buildRomlib(inv *inventory, in *cab.Info, j *jobs.Job) *RomlibR
 	var discs = map[string]*RLDisc{}
 	for _, sys := range names {
 		files := inv.Systems[sys]
-		rs := RLSystem{Name: sys}
+		rs := RLSystem{Name: sys, Files: []RLFile{}}
 		var exts []string
 		if in != nil {
 			if es, ok := in.Systems[sys]; ok {
