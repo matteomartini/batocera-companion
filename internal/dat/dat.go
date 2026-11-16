@@ -533,3 +533,13 @@ func (db *DB) DedicatedSystem(name string) (system, why string) {
 	}
 	return "", ""
 }
+
+// IsPinball: set di un flipper (driver MAME in src/mame/pinball/): è una ROM PinMAME
+// per Visual Pinball, non un gioco da cartella mame.
+func (db *DB) IsPinball(name string) bool {
+	g := db.Games[name]
+	if g == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(g.Source), "pinball/")
+}

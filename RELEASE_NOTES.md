@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.20.0
+- **Visual Pinball**: Aggiungi ROM riconosce i tavoli .vpx (cartella per tavolo, con .directb2s/.vbs/.ini dello stesso nome) e le ROM PinMAME (riconosciute dal DAT di MAME, verificate per CRC: se incomplete lo dice, perché il flipper non si avvia) e le mette in roms/ accanto al tavolo che le usa (letto dallo script del .vpx, anche per i tavoli già sul cabinato). Giochi → vpinball → "Controlla tutti i set": per ogni tavolo, ROM presente e completa.
+
 1.19.9
 - Aggiungi ROM: i set Model 2/3, Naomi, Atomiswave, Triforce vanno nel sistema dedicato anche se risultano "incompleti" per MAME (quegli emulatori hanno requisiti propri): copiati così come sono, con la scelta mame in alternativa.
 

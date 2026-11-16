@@ -158,12 +158,13 @@ func human(b int64) string {
 
 func (ap *Applier) doCopy(ctx context.Context, cl *sftp.Client, it *Item, destDir string, prog func(int64, int64)) error {
 	_ = cl.MkdirAll(destDir)
+	_ = cl.MkdirAll(path.Join(destDir, path.Dir(it.DestName)))
 	files := append([]string{it.Sources[0]}, it.Extra...)
 	var done int64
 	for i, f := range files {
 		dest := path.Join(destDir, it.DestName)
 		if i > 0 {
-			dest = path.Join(destDir, filepath.Base(f))
+			dest = path.Join(destDir, path.Dir(it.DestName), filepath.Base(f))
 		}
 		if it.Kind == "doom" {
 			dest = path.Join(destDir, filepath.Base(f))

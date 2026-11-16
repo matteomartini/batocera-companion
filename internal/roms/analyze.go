@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -328,10 +329,12 @@ func (a *Analyzer) Analyze(ctx context.Context, paths []string) (*Session, error
 		sess.Items = append(sess.Items, it)
 	}
 
+	// 3a. Visual Pinball: cartella per tavolo e ROM PinMAME accanto al tavolo
+	a.pinballLayout(sess.Items)
 	// 3. doppioni: stesso set arcade da più sorgenti → resta il migliore
 	best := map[string]*Item{}
 	for _, it := range sess.Items {
-		if it.Kind != "arcade" || it.Action == "skip" {
+		if (it.Kind != "arcade" && it.Kind != "pinmame") || it.Action == "skip" {
 			continue
 		}
 		key := it.System + "/" + it.DestName
@@ -624,6 +627,9 @@ func (a *Analyzer) tryArcade(it *Item, name string, dbs []arcadeDB, pool map[uin
 			bestName = m.Core
 			break
 		}
+	}
+	if a.pinball(it, dbs) {
+		return true
 	}
 	if a.dedicated(it, dbs) {
 		return true
@@ -1174,4 +1180,149 @@ func SetExtras(db *dat.DB, name string) (devices []string, disks []string) {
 		cur = db.Games[cur.CloneOf]
 	}
 	return devices, disks
+}
+
+// ---------- Visual Pinball ----------
+
+var reVpxRom = regexp.MustCompile(`(?i)cGameName\s*=\s*"([^"]+)"`)
+
+// VpxRom: nome della ROM PinMAME che il tavolo .vpx carica (dallo script incorporato).
+func VpxRom(vpx string) string {
+	f, err := os.Open(vpx)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	buf := make([]byte, 4<<20)
+	var carry []byte
+	for {
+		n, err := f.Read(buf)
+		if n > 0 {
+			chunk := append(carry, buf[:n]...)
+			if m := reVpxRom.FindSubmatch(chunk); m != nil {
+				return strings.ToLower(string(m[1]))
+			}
+			if len(chunk) > 64 {
+				carry = append([]byte{}, chunk[len(chunk)-64:]...)
+			}
+		}
+		if err != nil {
+			return ""
+		}
+	}
+}
+
+// pinball: set riconosciuto dal DAT di MAME come flipper → ROM PinMAME per vpinball.
+func (a *Analyzer) pinball(it *Item, dbs []arcadeDB) bool {
+	for _, adb := range dbs {
+		if adb.core != "mame" || !adb.db.IsPinball(it.SetName) {
+			continue
+		}
+		g := adb.db.Games[it.SetName]
+		it.Kind = "pinmame"
+		it.System = "vpinball"
+		it.SystemOptions = []string{"vpinball"}
+		it.Core = ""
+		it.GameName = g.Desc
+		it.DestName = "roms/" + it.SetName + ".zip" // affinato in pinballLayout
+		it.Action = "copy"
+		it.Files = nil
+		it.Confidence = "green"
+		if ck := it.ByCore["mame"]; ck != nil && len(ck.missing) > 0 {
+			it.Missing = ck.missing
+			it.Confidence = "red"
+			it.Action = "skip"
+			it.Notes = appendOnce(it.Notes, fmt.Sprintf("ROM PinMAME incompleta: mancano %d file (%s): il flipper non si avvia (niente moneta, start, flipper)", len(ck.missing), strings.Join(ck.missing, ", ")))
+		} else {
+			it.Notes = appendOnce(it.Notes, "ROM PinMAME per Visual Pinball ("+g.Desc+"), completa")
+		}
+		return true
+	}
+	return false
+}
+
+// pinballLayout: ogni .vpx va in una cartella con il suo nome (con .directb2s/.vbs/.ini
+// dello stesso nome); ogni ROM PinMAME va in <cartella del tavolo>/roms/, cercando il
+// tavolo che la usa prima nella selezione, poi sul cabinato.
+func (a *Analyzer) pinballLayout(items []*Item) {
+	romTable := map[string]string{} // rom → cartella tavolo
+	var pins []*Item
+	for _, it := range items {
+		if it.Skip {
+			continue
+		}
+		switch {
+		case it.ext == ".vpx":
+			stem := strings.TrimSuffix(filepath.Base(it.Sources[0]), filepath.Ext(it.Sources[0]))
+			it.Kind = "vpx"
+			it.System = "vpinball"
+			it.SystemOptions = []string{"vpinball"}
+			it.DestName = stem + "/" + stem + ".vpx"
+			it.Action = "copy"
+			it.Confidence = "green"
+			it.Notes = nil
+			dir := filepath.Dir(it.Sources[0])
+			for _, ext := range []string{".directb2s", ".vbs", ".ini"} {
+				side := filepath.Join(dir, stem+ext)
+				if _, err := os.Stat(side); err == nil {
+					it.Extra = appendOnce(it.Extra, side)
+					for _, o := range items { // il file accessorio viaggia col tavolo, non da solo
+						if len(o.Sources) > 0 && o.Sources[0] == side {
+							o.Skip = true
+							o.Notes = []string{"copiato insieme al tavolo " + stem + ".vpx"}
+						}
+					}
+				}
+			}
+			if rom := VpxRom(it.Sources[0]); rom != "" {
+				romTable[rom] = stem
+				it.Notes = appendOnce(it.Notes, "tavolo Visual Pinball; usa la ROM PinMAME "+rom+".zip")
+			} else {
+				it.Notes = appendOnce(it.Notes, "tavolo Visual Pinball (senza ROM PinMAME, o script non leggibile)")
+			}
+		case it.Kind == "pinmame":
+			pins = append(pins, it)
+		}
+	}
+	if len(pins) == 0 {
+		return
+	}
+	// tavoli già sul cabinato che usano queste ROM
+	if a.SSH != nil {
+		var want []string
+		for _, it := range pins {
+			if romTable[it.SetName] == "" {
+				want = append(want, it.SetName)
+			}
+		}
+		if len(want) > 0 {
+			cmd := `for f in /userdata/roms/vpinball/*.vpx /userdata/roms/vpinball/*/*.vpx; do [ -f "$f" ] || continue; n=$(grep -aoi 'cGameName *= *"[^"]*"' "$f" | head -1 | sed 's/.*"\(.*\)"/\1/' | tr 'A-Z' 'a-z'); [ -n "$n" ] && echo "$n|$f"; done 2>/dev/null`
+			if res, err := a.SSH.RunTimeout(cmd, 2*time.Minute); err == nil {
+				for _, l := range strings.Split(res.Stdout, "\n") {
+					rom, f, ok := strings.Cut(strings.TrimSpace(l), "|")
+					if !ok || romTable[rom] != "" {
+						continue
+					}
+					rel := strings.TrimPrefix(f, "/userdata/roms/vpinball/")
+					if strings.Contains(rel, "/") {
+						romTable[rom] = path.Dir(rel)
+					} else {
+						romTable[rom] = "." // tavolo nella radice: roms/ nella radice
+					}
+				}
+			}
+		}
+	}
+	for _, it := range pins {
+		if t := romTable[it.SetName]; t != "" && t != "." {
+			it.DestName = t + "/roms/" + it.SetName + ".zip"
+			it.Notes = appendOnce(it.Notes, "va accanto al tavolo: vpinball/"+t+"/roms/")
+		} else if t == "." {
+			it.DestName = "roms/" + it.SetName + ".zip"
+			it.Notes = appendOnce(it.Notes, "il tavolo sta nella radice di vpinball: ROM in vpinball/roms/")
+		} else {
+			it.DestName = "roms/" + it.SetName + ".zip"
+			it.Notes = appendOnce(it.Notes, "nessun tavolo trovato che usi questa ROM: copiata in vpinball/roms/ (vale per i tavoli nella radice); se aggiungi il tavolo dopo, ricarica la ROM insieme")
+		}
+	}
 }

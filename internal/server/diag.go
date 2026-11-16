@@ -345,8 +345,11 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 	if err := readJSON(r, &req); err != nil {
 		return nil, err
 	}
+	if req.System == "vpinball" && len(req.Apply) == 0 {
+		return s.diagVpinball()
+	}
 	if req.System == "" || !isArcadeSys(req.System) {
-		return nil, errors.New("funziona per le cartelle arcade (mame, fbneo, neogeo, cps…)")
+		return nil, errors.New("funziona per le cartelle arcade (mame, fbneo, neogeo, cps…) e vpinball")
 	}
 	sys := req.System
 	q := cab.ShellQuote
@@ -588,4 +591,92 @@ func appendOnceS(l []string, v string) []string {
 		}
 	}
 	return append(l, v)
+}
+
+// diagVpinball: per ogni tavolo .vpx, la ROM PinMAME che usa: c'è? è completa (DAT MAME)?
+const vpxScanPy = `import os, re, zipfile, json
+root='/userdata/roms/vpinball'; out=[]
+rx=re.compile(rb'cGameName\s*=\s*"([^"]+)"', re.I)
+def rom_of(p):
+    try:
+        with open(p,'rb') as f:
+            data=f.read()
+        m=rx.search(data)
+        return m.group(1).decode(errors='ignore').lower() if m else ''
+    except Exception: return ''
+for dp, dn, fn in os.walk(root):
+    if dp.count('/')-root.count('/')>1: continue
+    for n in fn:
+        if not n.lower().endswith('.vpx'): continue
+        p=os.path.join(dp,n); rom=rom_of(p); rel=os.path.relpath(p,root)
+        found=''; crcs=[]
+        if rom:
+            for c in [os.path.join(dp,'roms',rom+'.zip'), os.path.join(dp,'pinmame','roms',rom+'.zip'), os.path.join(root,'roms',rom+'.zip'), '/userdata/system/configs/vpinball/pinmame/roms/'+rom+'.zip']:
+                if os.path.isfile(c):
+                    found=c
+                    try: crcs=[i.CRC for i in zipfile.ZipFile(c).infolist()]
+                    except Exception: crcs=[]
+                    break
+        out.append({"table":rel,"rom":rom,"zip":found,"crcs":crcs})
+print(json.dumps(out))`
+
+func (s *Server) diagVpinball() (any, error) {
+	j := s.jobs.Start("Controllo tavoli Visual Pinball", func(j *jobs.Job) (any, error) {
+		j.SetProgress(-1, "Leggo i tavoli e le ROM PinMAME")
+		res, err := s.ssh.RunCtx(j.Context(), "python3 -c "+cab.ShellQuote(vpxScanPy), 10*time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		var tables []struct {
+			Table, Rom, Zip string
+			Crcs            []float64
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(lastLine(res.Stdout))), &tables); err != nil {
+			return nil, fmt.Errorf("lettura tavoli: %v %s", err, res.Stderr)
+		}
+		db, _ := s.dats.Load("mame")
+		type row struct {
+			File     string            `json:"file"`
+			Current  string            `json:"current"`
+			Override bool              `json:"override"`
+			Status   string            `json:"status"`
+			Best     string            `json:"best"`
+			Cores    map[string]string `json:"cores"`
+			Note     string            `json:"note"`
+		}
+		var rows []row
+		counts := map[string]int{}
+		for _, t := range tables {
+			rw := row{File: t.Table, Current: "vpinball", Cores: map[string]string{}}
+			switch {
+			case t.Rom == "":
+				rw.Status, rw.Note = "ok", "tavolo senza ROM PinMAME (o script non leggibile)"
+			case t.Zip == "":
+				rw.Status, rw.Note = "incomplete", "manca la ROM PinMAME "+t.Rom+".zip (cercata in roms/ accanto al tavolo, vpinball/roms/ e pinmame/roms/)"
+			default:
+				rw.Note = "ROM " + t.Rom + ".zip in " + strings.TrimPrefix(t.Zip, "/userdata/roms/vpinball/")
+				if db != nil && db.Games[t.Rom] != nil {
+					have := map[uint32]bool{}
+					for _, c := range t.Crcs {
+						have[uint32(c)] = true
+					}
+					h, tot, missing, _, _ := roms.SetMissing(db, t.Rom, have)
+					if len(missing) > 0 {
+						rw.Status = "incomplete"
+						rw.Note += fmt.Sprintf(" — INCOMPLETA: mancano %d/%d (%s): il flipper non si avvia", len(missing), tot, strings.Join(missing, ", "))
+					} else {
+						rw.Status = "ok"
+						rw.Note += fmt.Sprintf(" — completa (%d file)", h)
+					}
+				} else {
+					rw.Status = "ok"
+					rw.Note += " — presente (non verificabile: DAT di MAME non disponibile o set non in MAME)"
+				}
+			}
+			counts[rw.Status]++
+			rows = append(rows, rw)
+		}
+		return map[string]any{"system": "vpinball", "rows": rows, "counts": counts, "sys_core": "vpinball"}, nil
+	})
+	return map[string]any{"job": j.ID}, nil
 }
