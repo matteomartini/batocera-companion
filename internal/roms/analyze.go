@@ -474,7 +474,9 @@ func neededRoms(db *dat.DB, name string) ([]dat.Rom, string) {
 	bios := ""
 	cur := g
 	for cur != nil {
-		if cur.IsBios {
+		// un antenato BIOS si ferma qui (sta in un suo zip); se il set richiesto
+		// È il BIOS (pgm.zip, neogeo.zip…), le sue ROM sono quelle da mettere nello zip
+		if cur.IsBios && cur != g {
 			bios = cur.Name
 			break
 		}
