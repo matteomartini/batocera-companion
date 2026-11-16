@@ -201,13 +201,29 @@ func appendOnce(list []string, v string) []string {
 	return append(list, v)
 }
 
-// findVariants raggruppa i file dello stesso gioco per sistema.
+// findVariants raggruppa i file dello stesso gioco per sistema. Due file finiscono
+// nello stesso gruppo se condividono almeno una chiave: set parent del DAT (cloni),
+// titolo del DAT senza tag, titolo del file senza tag, nome in EmulationStation.
 func (s *Server) findVariants(rep *RomlibReport, dbs map[string]*dat.DB) []RLVariant {
 	var out []RLVariant
 	for _, sy := range rep.Systems {
-		groups := map[string][]RLVariantFile{}
-		titles := map[string]string{}
-		order := []string{}
+		// nomi in EmulationStation (gamelist), per percorso
+		esNames := map[string]string{}
+		if games, err := s.es.Games(sy.Name); err == nil {
+			for _, g := range games {
+				rel := strings.TrimPrefix(g.Path, "/userdata/roms/"+sy.Name+"/")
+				rel = strings.TrimPrefix(rel, "./")
+				if g.Name != "" {
+					esNames[rel] = g.Name
+				}
+			}
+		}
+		type cand struct {
+			file  RLVariantFile
+			keys  []string
+			title string
+		}
+		var cands []cand
 		for _, f := range sy.Files {
 			if f.Status == "aux" || f.Status == "hidden_ext" || f.Status == "bad" {
 				continue
@@ -219,47 +235,123 @@ func (s *Server) findVariants(rep *RomlibReport, dbs map[string]*dat.DB) []RLVar
 			if reDiscTitle.MatchString(stem) {
 				continue // multi-disco: gestiti a parte
 			}
-			var key, title, why string
+			var keys []string
+			var title, why string
 			var score int
+			var g *dat.Game
+			var gdb *dat.DB
 			if f.Set != "" && dbs[f.DB] != nil {
-				db := dbs[f.DB]
-				g := db.Games[f.Set]
-				if g == nil || g.IsBios || g.IsDevice {
+				gdb = dbs[f.DB]
+				g = gdb.Games[f.Set]
+			}
+			if g == nil && isArcadeSys(sy.Name) {
+				for _, id := range []string{"fbneo", "mame", "mame2015", "mame2010", "mame2003_plus"} {
+					if db := dbs[id]; db != nil {
+						if x := db.Games[strings.ToLower(stem)]; x != nil {
+							g, gdb = x, db
+							break
+						}
+					}
+				}
+			}
+			if g != nil {
+				if g.IsBios || g.IsDevice {
 					continue
 				}
 				parent := g.CloneOf
 				if parent == "" {
 					parent = g.Name
 				}
-				key = "set:" + parent
+				keys = append(keys, "set:"+parent)
 				title = g.Desc
-				if p := db.Games[parent]; p != nil {
+				if p := gdb.Games[parent]; p != nil {
 					title = p.Desc
 				}
 				title = strings.TrimSpace(reVTags.ReplaceAllString(title, ""))
+				if t := variantTitle(reVTags.ReplaceAllString(g.Desc, " ")); t != "" {
+					keys = append(keys, "t:"+t)
+				}
 				score, why = scoreArcade(g, f.Status, g.CloneOf == "")
+				if f.Status != "ok" && f.Status != "incomplete" {
+					why = strings.TrimPrefix(why+", non verificato", ", ")
+				}
 			} else {
-				key = "t:" + variantTitle(stem)
 				title = strings.TrimSpace(reVTags.ReplaceAllString(stem, ""))
+				if t := variantTitle(stem); t != "" {
+					keys = append(keys, "t:"+t)
+				}
 				score, why = scoreConsole(sy.Name, stem, f.Status)
 			}
-			if strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(key, "t:"), "set:")) == "" {
+			if n := esNames[f.Path]; n != "" {
+				if t := variantTitle(n); t != "" {
+					keys = append(keys, "es:"+t)
+				}
+				if title == "" {
+					title = n
+				}
+			}
+			if len(keys) == 0 {
 				continue
 			}
-			if _, ok := groups[key]; !ok {
-				order = append(order, key)
-				titles[key] = title
-			}
-			groups[key] = append(groups[key], RLVariantFile{Path: f.Path, Name: f.Name, Score: score, Why: why})
+			cands = append(cands, cand{RLVariantFile{Path: f.Path, Name: f.Name, Score: score, Why: why}, keys, title})
 		}
-		for _, k := range order {
-			g := groups[k]
-			if len(g) < 2 {
+		// union-find sulle chiavi
+		parent := make([]int, len(cands))
+		for i := range parent {
+			parent[i] = i
+		}
+		var find func(int) int
+		find = func(i int) int {
+			for parent[i] != i {
+				parent[i] = parent[parent[i]]
+				i = parent[i]
+			}
+			return i
+		}
+		owner := map[string]int{}
+		for i, c := range cands {
+			for _, k := range c.keys {
+				if o, ok := owner[k]; ok {
+					a, b := find(i), find(o)
+					if a != b {
+						parent[a] = b
+					}
+				} else {
+					owner[k] = i
+				}
+			}
+		}
+		groups := map[int][]int{}
+		var order []int
+		for i := range cands {
+			r := find(i)
+			if _, ok := groups[r]; !ok {
+				order = append(order, r)
+			}
+			groups[r] = append(groups[r], i)
+		}
+		for _, r := range order {
+			idx := groups[r]
+			if len(idx) < 2 {
 				continue
 			}
-			sort.SliceStable(g, func(i, j int) bool { return g[i].Score > g[j].Score })
-			g[0].Keep = true
-			out = append(out, RLVariant{System: sy.Name, Title: titles[k], Files: g})
+			var files []RLVariantFile
+			title := ""
+			for _, i := range idx {
+				files = append(files, cands[i].file)
+				if title == "" || (cands[i].file.Score > 0 && len(cands[i].title) > 0 && cands[i].file.Keep) {
+					title = cands[i].title
+				}
+			}
+			sort.SliceStable(files, func(i, j int) bool { return files[i].Score > files[j].Score })
+			files[0].Keep = true
+			// titolo: quello del file migliore
+			for _, i := range idx {
+				if cands[i].file.Path == files[0].Path {
+					title = cands[i].title
+				}
+			}
+			out = append(out, RLVariant{System: sy.Name, Title: title, Files: files})
 		}
 	}
 	return out
@@ -270,4 +362,8 @@ func pathExt(p string) string {
 		return p[i:]
 	}
 	return ""
+}
+
+func isArcadeSys(sys string) bool {
+	return sys == "mame" || sys == "fbneo" || sys == "neogeo" || strings.HasPrefix(sys, "cps") || sys == "naomi" || sys == "atomiswave"
 }
