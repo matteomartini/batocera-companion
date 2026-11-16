@@ -352,6 +352,8 @@ for m in /media/*; do [ -d "$m" ] || continue; mountpoint -q "$m" || continue; d
 echo "@@blk"
 # partizioni (chiave=valore, i campi vuoti restano vuoti)
 lsblk -Pno NAME,FSTYPE,SIZE,LABEL,MOUNTPOINT,TYPE,TRAN 2>/dev/null
+echo "@@raw"
+lsblk -o NAME,FSTYPE,SIZE,LABEL,MOUNTPOINT,TYPE,TRAN,MODEL 2>/dev/null; echo; cat /proc/partitions 2>/dev/null | tail -n +3; echo; lsusb 2>/dev/null; echo; dmesg 2>/dev/null | grep -iE 'usb|scsi|sd[a-z]' | tail -15
 echo "@@dmesg"
 dmesg 2>/dev/null | grep -iE 'ntfs|exfat|volume is dirty|hibernat|unclean|read-only|sd[a-z]: ' | tail -8`, time.Minute)
 		if err != nil {
@@ -372,7 +374,11 @@ dmesg 2>/dev/null | grep -iE 'ntfs|exfat|volume is dirty|hibernat|unclean|read-o
 			for _, m := range reLsblkKV.FindAllStringSubmatch(l, -1) {
 				kv[m[1]] = m[2]
 			}
-			if kv["TYPE"] != "part" || kv["FSTYPE"] == "" {
+			// partizioni, e dischi senza tabella partizioni (filesystem direttamente sul disco)
+			if kv["TYPE"] != "part" && kv["TYPE"] != "disk" {
+				continue
+			}
+			if kv["TYPE"] == "disk" && kv["FSTYPE"] == "" {
 				continue
 			}
 			switch kv["FSTYPE"] {
@@ -386,9 +392,12 @@ dmesg 2>/dev/null | grep -iE 'ntfs|exfat|volume is dirty|hibernat|unclean|read-o
 			if mp != "" && kv["TRAN"] != "usb" {
 				continue
 			}
+			if kv["FSTYPE"] == "" && kv["TRAN"] != "usb" {
+				continue
+			}
 			unmounted = append(unmounted, map[string]any{"dev": "/dev/" + kv["NAME"], "fs": kv["FSTYPE"], "size": kv["SIZE"], "label": strings.ReplaceAll(kv["LABEL"], `\x20`, " "), "mounted_at": mp, "bus": kv["TRAN"]})
 		}
-		return map[string]any{"drives": drives, "unmounted": unmounted, "dmesg": strings.TrimSpace(sec["dmesg"])}, nil
+		return map[string]any{"drives": drives, "unmounted": unmounted, "dmesg": strings.TrimSpace(sec["dmesg"]), "raw": strings.TrimSpace(sec["raw"])}, nil
 	}
 	var req struct {
 		Action string   `json:"action"`

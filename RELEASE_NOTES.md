@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.18.1
+- Backup USB: elencati anche i dischi senza tabella partizioni e le partizioni con filesystem non riconosciuto; riquadro "Cosa vede il cabinato" con lsblk, partizioni, USB e kernel per la diagnosi.
+
 1.18.0
 - Le finestre "Scegli file" / "Scegli cartella" si aprono davanti al Companion, non più dietro.
 
