@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.8
+- Comandi lunghi verso il cabinato (es. "Applica" su molti giochi, correzioni in blocco): lo sshd di Batocera (Dropbear) rifiuta comandi oltre ~9 KB e il Companion rispondeva "EOF". Ora i comandi lunghi vengono caricati come script temporaneo ed eseguiti da lì.
+
 1.19.7
 - DAT: se il file sorgente è vuoto o troncato (errore "EOF") viene usata la cache precedente e il messaggio dice quale DAT riscaricare dalla scheda Database.
 

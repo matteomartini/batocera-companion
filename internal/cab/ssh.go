@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -297,7 +298,12 @@ func (s *SSH) runOn(ctx context.Context, c *ssh.Client, cmd string, timeout time
 	var out, errb bytes.Buffer
 	sess.Stdout, sess.Stderr = &out, &errb
 	done := make(chan error, 1)
-	go func() { done <- sess.Run("bash -c " + ShellQuote(Prelude+cmd)) }()
+	execLine, cleanup, perr := s.execLine(cmd)
+	if perr != nil {
+		return nil, perr
+	}
+	defer cleanup()
+	go func() { done <- sess.Run(execLine) }()
 	var timer <-chan time.Time
 	if timeout > 0 {
 		timer = time.After(timeout)
@@ -348,7 +354,13 @@ func (s *SSH) StreamSession(cmd string) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	sess.Stdout = pw
 	sess.Stderr = io.Discard
-	if err := sess.Start("bash -c " + ShellQuote(Prelude+cmd)); err != nil {
+	execLine, cleanup, perr := s.execLine(cmd)
+	if perr != nil {
+		sess.Close()
+		return nil, perr
+	}
+	_ = cleanup // lo script resta in /tmp: viene sovrascritto alle prossime esecuzioni
+	if err := sess.Start(execLine); err != nil {
 		sess.Close()
 		return nil, err
 	}
@@ -525,3 +537,20 @@ func (s *SSH) ReadFile(remote string) ([]byte, error) {
 
 // ShellQuote: quoting sicuro per bash.
 func ShellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// execLine: la riga da passare a exec. Dropbear (lo sshd di Batocera) rifiuta comandi
+// oltre ~9 KB ("EOF" lato client): i comandi lunghi vengono caricati come script in /tmp.
+var execSeq uint64
+
+func (s *SSH) execLine(cmd string) (string, func(), error) {
+	full := Prelude + cmd
+	if len(full) < 6000 {
+		return "bash -c " + ShellQuote(full), func() {}, nil
+	}
+	n := atomic.AddUint64(&execSeq, 1)
+	remote := fmt.Sprintf("/tmp/bc_cmd_%d_%d.sh", os.Getpid(), n)
+	if err := s.UploadBytes(remote, []byte(full), 0o755); err != nil {
+		return "", nil, fmt.Errorf("caricamento comando: %w", err)
+	}
+	return "bash " + remote, func() { go func() { _, _ = s.RunTimeout("rm -f "+remote, 10*time.Second) }() }, nil
+}
