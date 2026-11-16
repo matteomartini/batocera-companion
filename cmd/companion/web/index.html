@@ -190,6 +190,7 @@
           <button class="btn primary" onclick="rlRun()">🔎 Analizza tutte le ROM</button>
           <button class="btn" id="rl-fix-md" onclick="rlFix('multidisc')" hidden>💿 Sistema i multi-disco</button>
           <button class="btn" id="rl-fix-cores" onclick="rlFix('cores')" hidden>🧹 Togli i core non installati</button>
+          <button class="btn" id="rl-fix-bios" onclick="rlFix('bios')" hidden title="Copia neogeo.zip, pgm.zip e gli altri BIOS arcade nelle cartelle ROM che li richiedono, prendendoli da /userdata/bios o da un'altra cartella ROM dove già ci sono">💾 Copia i BIOS nelle cartelle ROM</button>
         </div>
         <div id="rl-job" hidden style="margin-top:8px"><div class="jobline"><span id="rl-step"></span></div><div class="bar big"><i class="indet"></i></div><pre class="log" id="rl-log"></pre></div>
         <div id="rl-out" style="margin-top:10px"></div>

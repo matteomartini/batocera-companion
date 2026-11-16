@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.18.6
+- Libreria ROM: pulsante **Copia i BIOS nelle cartelle ROM** — trova i BIOS arcade (neogeo.zip, pgm.zip, …) richiesti dai set presenti e mancanti nella cartella, e li copia da /userdata/bios o da un'altra cartella ROM; i BIOS copiati sono nascosti in EmulationStation.
+
 1.18.5
 - Libreria ROM: flag **✓ Funziona** per i set provati a mano, memorizzato anche dopo nuove analisi; i set segnati non contano più come problema nel Check-up.
 

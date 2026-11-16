@@ -34,6 +34,8 @@ type RLFile struct {
 	Name    string `json:"name,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 	Missing int    `json:"missing,omitempty"`
+	Set     string `json:"set,omitempty"` // nome del set arcade riconosciuto
+	DB      string `json:"db,omitempty"`  // DAT che lo riconosce
 }
 
 type RLSystem struct {
@@ -317,7 +319,7 @@ func (s *Server) checkArcadeZip(dbs []*dat.DB, name string, f invFile) RLFile {
 			continue
 		}
 		if g.IsBios || g.IsDevice {
-			return RLFile{Path: f.Path, Status: "ok", Name: g.Desc}
+			return RLFile{Path: f.Path, Status: "ok", Name: g.Desc, Set: g.Name, DB: db.ID}
 		}
 		// set split: le ROM proprie del set (quelle con merge stanno nel parent)
 		missing := 0
@@ -335,11 +337,11 @@ func (s *Server) checkArcadeZip(dbs []*dat.DB, name string, f invFile) RLFile {
 			}
 		}
 		if missing == 0 {
-			return RLFile{Path: f.Path, Status: "ok", Name: g.Desc, Detail: db.ID}
+			return RLFile{Path: f.Path, Status: "ok", Name: g.Desc, Detail: db.ID, Set: g.Name, DB: db.ID}
 		}
 		if missing < bestMissing {
 			bestMissing = missing
-			best = RLFile{Path: f.Path, Status: "incomplete", Name: g.Desc, Missing: missing, Detail: fmt.Sprintf("%s: %d/%d file", db.ID, total-missing, total)}
+			best = RLFile{Path: f.Path, Status: "incomplete", Name: g.Desc, Missing: missing, Detail: fmt.Sprintf("%s: %d/%d file", db.ID, total-missing, total), Set: g.Name, DB: db.ID}
 		}
 	}
 	return best
@@ -403,12 +405,104 @@ func (s *Server) hRomlibFix(w http.ResponseWriter, r *http.Request) (any, error)
 				return nil, err
 			}
 			j.Logf("%d impostazioni rimosse", n)
+		case "bios":
+			return s.romlibCopyBios(j, rep)
 		default:
 			return nil, fmt.Errorf("azione sconosciuta")
 		}
 		return nil, nil
 	})
 	return map[string]any{"job": j.ID}, nil
+}
+
+// romlibCopyBios: per ogni cartella arcade, trova i BIOS (neogeo.zip, pgm.zip, …) richiesti
+// dai set presenti e mancanti nella cartella, e li copia da /userdata/bios o da un'altra
+// cartella ROM dove già ci sono. I BIOS copiati vengono nascosti nella lista di EmulationStation.
+func (s *Server) romlibCopyBios(j *jobs.Job, rep *RomlibReport) (any, error) {
+	dbs := map[string]*dat.DB{}
+	for _, id := range []string{"fbneo", "mame", "mame2015", "mame2010", "mame2003_plus"} {
+		if db, _ := s.dats.Load(id); db != nil {
+			dbs[id] = db
+		}
+	}
+	type need struct{ sys, bios, desc string }
+	var needs []need
+	for _, sy := range rep.Systems {
+		have := map[string]bool{}
+		for _, f := range sy.Files {
+			have[strings.ToLower(strings.TrimSuffix(path.Base(f.Path), path.Ext(f.Path)))] = true
+		}
+		req := map[string]string{}
+		for _, f := range sy.Files {
+			if f.Set == "" || dbs[f.DB] == nil {
+				continue
+			}
+			db := dbs[f.DB]
+			// risali la catena romof: clone → parent → bios. Un romof che non è il
+			// parent (cloneof) è un BIOS, anche nei DAT vecchi senza attributo isbios.
+			seen := map[string]bool{}
+			cur := f.Set
+			for cur != "" && !seen[cur] {
+				seen[cur] = true
+				g := db.Games[cur]
+				if g == nil {
+					break
+				}
+				next := g.RomOf
+				if next != "" && next != g.CloneOf {
+					if b := db.Games[next]; b != nil {
+						req[next] = b.Desc
+					}
+				}
+				cur = next
+			}
+		}
+		for b, d := range req {
+			if !have[b] {
+				needs = append(needs, need{sy.Name, b, d})
+			}
+		}
+	}
+	if len(needs) == 0 {
+		j.Logf("Tutti i BIOS richiesti dai set presenti sono già nelle cartelle ROM.")
+		return map[string]any{"copied": 0}, nil
+	}
+	var script []string
+	for _, n := range needs {
+		script = append(script, fmt.Sprintf(`b=%s; dst=/userdata/roms/%s/$b.zip; src=""; for c in /userdata/bios/$b.zip /userdata/bios/*/$b.zip /userdata/roms/*/$b.zip; do [ -f "$c" ] && [ "$c" != "$dst" ] && { src="$c"; break; }; done; if [ -n "$src" ]; then cp -f "$src" "$dst" && echo "OK %s $b $src"; else echo "MISS %s $b"; fi`, cab.ShellQuote(n.bios), n.sys, n.sys, n.sys))
+	}
+	j.SetProgress(-1, fmt.Sprintf("Copio %d BIOS", len(needs)))
+	res, err := s.ssh.RunCtx(j.Context(), strings.Join(script, "\n"), 10*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	copied, missing := 0, 0
+	desc := map[string]string{}
+	for _, n := range needs {
+		desc[n.bios] = n.desc
+	}
+	touched := map[string]bool{}
+	for _, l := range cab.Lines(res.Stdout) {
+		f := strings.Fields(l)
+		if len(f) < 3 {
+			continue
+		}
+		switch f[0] {
+		case "OK":
+			copied++
+			touched[f[1]] = true
+			j.Logf("✓ %s/%s.zip (%s) ← %s", f[1], f[2], desc[f[2]], f[3])
+			_, _ = s.gamelistRun(f[1], "set", "./"+f[2]+".zip", map[string]any{"hidden": "true"})
+		case "MISS":
+			missing++
+			j.Logf("✗ %s: manca %s.zip (%s): caricalo da BIOS → Carica, poi ripeti", f[1], f[2], desc[f[2]])
+		}
+	}
+	if len(touched) > 0 {
+		_ = s.es.ReloadGames()
+	}
+	j.Logf("%d BIOS copiati, %d non trovati da nessuna parte", copied, missing)
+	return map[string]any{"copied": copied, "missing": missing}, nil
 }
 
 // romLibFindings: esiti della libreria da inserire nel check-up.

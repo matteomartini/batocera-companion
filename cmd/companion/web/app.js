@@ -427,6 +427,7 @@ function rlRender(at) {
   const rep = rlReport; if (!rep) return;
   const noM3U = rep.discs.filter(g => !g.has_m3u).length, badCores = rep.overrides.filter(o => !o.installed).length;
   $('#rl-fix-md').hidden = rep.discs.length === 0; $('#rl-fix-cores').hidden = badCores === 0;
+  $('#rl-fix-bios').hidden = !rep.systems.some(s => s.files.some(f => f.set));
   const st = (n, cls) => n ? `<span class="tag ${cls}">${n}</span>` : '<span class="muted">0</span>';
   let h = `<div class="hint">Ultima analisi: ${at.toLocaleString()} · ${esc(rep.summary)}</div>
     <table class="tbl" style="margin-top:8px"><thead><tr><th>Sistema</th><th>Giochi</th><th>Riconosciuti</th><th>Set incompleti</th><th>Sconosciuti</th><th>Est. ignorata</th><th></th></tr></thead><tbody>`;
@@ -479,10 +480,10 @@ async function rlTrash(btn, sys, path) {
   } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
 }
 async function rlFix(action) {
-  const q = action === 'multidisc' ? 'Creo gli .m3u mancanti (dove il sistema li supporta) e nascondo i singoli dischi dalla lista; per i sistemi senza .m3u resta visibile solo il disco 1. Procedo?' : 'Tolgo da batocera.conf le impostazioni per gioco che puntano a core non installati (il gioco tornerà al core predefinito del sistema). Prima salvo una copia di batocera.conf. Procedo?';
+  const q = action === 'bios' ? 'Per ogni cartella arcade (fbneo, mame, neogeo, cps…) cerco i BIOS richiesti dai set presenti (es. neogeo.zip per i giochi Neo Geo, pgm.zip per i PGM) che mancano nella cartella, e li copio da /userdata/bios o da un\'altra cartella ROM dove già ci sono. I BIOS copiati vengono nascosti dalla lista di EmulationStation. Procedo?' : action === 'multidisc' ? 'Creo gli .m3u mancanti (dove il sistema li supporta) e nascondo i singoli dischi dalla lista; per i sistemi senza .m3u resta visibile solo il disco 1. Procedo?' : 'Tolgo da batocera.conf le impostazioni per gioco che puntano a core non installati (il gioco tornerà al core predefinito del sistema). Prima salvo una copia di batocera.conf. Procedo?';
   if (!await dlg(`<p>${q}</p>`, 'Procedi')) return;
   $('#rl-job').hidden = false; $('#rl-log').textContent = '';
-  try { const r = await api('romlib/fix', {action}); await pollJob(r.job, jj => { $('#rl-step').textContent = jj.step || ''; $('#rl-log').textContent = (jj.log || []).join('\n'); }); toast('Fatto', 'ok'); rlRun(); }
+  try { const r = await api('romlib/fix', {action}); const res = await pollJob(r.job, jj => { $('#rl-step').textContent = jj.step || ''; $('#rl-log').textContent = (jj.log || []).join('\n'); }); toast('Fatto', 'ok'); if (action === 'bios') { $('#rl-job').hidden = false; await dlg('<p><b>BIOS nelle cartelle ROM</b></p><pre class="log">' + esc($('#rl-log').textContent) + '</pre>', 'OK'); if (res.result && res.result.copied) rlRun(); else $('#rl-job').hidden = true; } else rlRun(); }
   catch (e) { toast(e.message, 'err'); $('#rl-job').hidden = true; }
 }
 
