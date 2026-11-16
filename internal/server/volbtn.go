@@ -17,17 +17,21 @@ import (
 const vbDetectPy = `
 import os, struct, select, fcntl, glob, sys, time
 EVIOCGNAME = 0x81004506
+EVIOCGPHYS = 0x81004507
 fmt = 'llHHi'; sz = struct.calcsize(fmt)
 fds = {}
 for p in glob.glob('/dev/input/event*'):
     n = os.path.basename(p)
     try: fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK)
     except Exception: continue
-    nm = n
+    nm = n; ph = ''
     try:
         name = bytearray(256); fcntl.ioctl(fd, EVIOCGNAME, name); nm = name.split(b'\0',1)[0].decode(errors='ignore') or n
     except Exception: pass
-    fds[fd] = (n, nm)
+    try:
+        phys = bytearray(256); fcntl.ioctl(fd, EVIOCGPHYS, phys); ph = phys.split(b'\0',1)[0].decode(errors='ignore')
+    except Exception: pass
+    fds[fd] = (n, nm, ph)
 if not fds: print('{"error":"nessun dispositivo in /dev/input"}'); sys.exit(0)
 end = time.time() + float(sys.argv[1])
 while time.time() < end:
@@ -38,7 +42,7 @@ while time.time() < end:
         for i in range(0, len(data) - sz + 1, sz):
             _, _, t, code, val = struct.unpack(fmt, data[i:i+sz])
             if t == 1 and val == 1 and code >= 0x100:
-                print('{"device":"%s","name":"%s","code":%d}' % (fds[fd][0], fds[fd][1].replace('"',''), code)); sys.exit(0)
+                print('{"device":"%s","name":"%s","phys":"%s","code":%d}' % (fds[fd][0], fds[fd][1].replace('"',''), fds[fd][2].replace('"',''), code)); sys.exit(0)
 print('{}')
 `
 
@@ -91,7 +95,7 @@ func (s *Server) hVolbtnInstall(w http.ResponseWriter, r *http.Request) (any, er
 		Up, Down, Step, Max, Boot int
 		Interval                  float64
 		Popup                     bool
-		Name                      string
+		Name, Phys                string
 	}
 	var raw struct {
 		Up       int     `json:"up"`
@@ -102,11 +106,12 @@ func (s *Server) hVolbtnInstall(w http.ResponseWriter, r *http.Request) (any, er
 		Interval float64 `json:"interval"`
 		Popup    bool    `json:"popup"`
 		Name     string  `json:"name"`
+		Phys     string  `json:"phys"` // porta USB (EVIOCGPHYS): se impostata, ascolta solo quel controller
 	}
 	if err := readJSON(r, &raw); err != nil {
 		return nil, err
 	}
-	req.Up, req.Down, req.Step, req.Max, req.Boot, req.Interval, req.Popup, req.Name = raw.Up, raw.Down, raw.Step, raw.Max, raw.Boot, raw.Interval, raw.Popup, raw.Name
+	req.Up, req.Down, req.Step, req.Max, req.Boot, req.Interval, req.Popup, req.Name, req.Phys = raw.Up, raw.Down, raw.Step, raw.Max, raw.Boot, raw.Interval, raw.Popup, raw.Name, raw.Phys
 	if req.Up == 0 || req.Down == 0 {
 		return nil, errors.New("rileva prima i due pulsanti")
 	}
@@ -116,7 +121,7 @@ func (s *Server) hVolbtnInstall(w http.ResponseWriter, r *http.Request) (any, er
 	}
 	j := s.jobs.Start("Pulsanti volume", func(j *jobs.Job) (any, error) {
 		j.SetProgress(-1, "Installo il servizio")
-		conf, _ := json.Marshal(map[string]any{"up": req.Up, "down": req.Down, "step": req.Step, "max": req.Max, "boot": req.Boot, "interval": req.Interval, "name": req.Name, "notify": false})
+		conf, _ := json.Marshal(map[string]any{"up": req.Up, "down": req.Down, "step": req.Step, "max": req.Max, "boot": req.Boot, "interval": req.Interval, "name": req.Name, "phys": req.Phys, "notify": false})
 		if err := s.ssh.UploadBytes(compDir+"/volume-buttons.json", conf, 0o644); err != nil {
 			return nil, err
 		}

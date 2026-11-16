@@ -2,10 +2,12 @@
 # Pulsanti volume - Batocera Companion
 import os, struct, select, fcntl, json, time, subprocess, glob, urllib.request
 EVIOCGNAME = 0x81004506
+EVIOCGPHYS = 0x81004507
 CONF = '/userdata/system/companion/volume-buttons.json'
 fmt = 'llHHi'; sz = struct.calcsize(fmt)
 cfg = json.load(open(CONF))
 UP, DOWN, STEP, NAME = cfg['up'], cfg['down'], int(cfg.get('step', 5)), cfg.get('name', '')
+PHYS = cfg.get('phys', '')   # porta USB del controller: se impostata, gli altri controller con lo stesso nome vengono ignorati
 MAX = max(100, min(200, int(cfg.get('max', 100))))   # volume massimo (PipeWire permette oltre il 100%)
 BOOT = int(cfg.get('boot', MAX))                     # volume impostato all'avvio
 NOTIFY = bool(cfg.get('notify', False))              # popup di testo di ES (di default no: ES mostra già la sua barra)
@@ -53,6 +55,12 @@ def opendevs():
             name = bytearray(256); fcntl.ioctl(fd, EVIOCGNAME, name); n = name.split(b'\0',1)[0].decode(errors='ignore')
         except Exception: pass
         if NAME and n and NAME not in n: os.close(fd); continue
+        if PHYS:
+            ph = ''
+            try:
+                phys = bytearray(256); fcntl.ioctl(fd, EVIOCGPHYS, phys); ph = phys.split(b'\0',1)[0].decode(errors='ignore')
+            except Exception: pass
+            if ph != PHYS: os.close(fd); continue
         fds[fd] = p
     return fds
 # all'avvio: aspetta PipeWire ed EmulationStation, poi imposta il volume di boot (ES lo rimette a 100 quando parte)

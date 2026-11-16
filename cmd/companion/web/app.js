@@ -1219,7 +1219,7 @@ async function vbLoad() {
   const el = $('#vb-state'); if (!el) return;
   try {
     const v = await api('volbtn');
-    if (v.config) { vb.up = v.config.up; vb.down = v.config.down; vb.name = v.config.name || ''; $('#vb-up').value = 'codice ' + vb.up; $('#vb-down').value = 'codice ' + vb.down; $('#vb-pct').value = v.config.step || 5; $('#vb-max').value = v.config.max || 100; $('#vb-boot').value = v.config.boot != null ? v.config.boot : 50; $('#vb-int').value = v.config.interval != null ? v.config.interval : 1; }
+    if (v.config) { vb.up = v.config.up; vb.down = v.config.down; vb.name = v.config.name || ''; vb.phys = v.config.phys || ''; $('#vb-only').checked = !!v.config.phys; vbPhysLabel(); $('#vb-up').value = 'codice ' + vb.up; $('#vb-down').value = 'codice ' + vb.down; $('#vb-pct').value = v.config.step || 5; $('#vb-max').value = v.config.max || 100; $('#vb-boot').value = v.config.boot != null ? v.config.boot : 50; $('#vb-int').value = v.config.interval != null ? v.config.interval : 1; }
     $('#vb-popup').checked = v.popup !== false;
     el.innerHTML = v.installed ? `<b>Installato</b> · servizio ${v.running ? '<span class="tag ok">in esecuzione</span>' : '<span class="tag err">fermo</span>'} · volume attuale ${esc(v.volume)}%` : 'Non installato.';
   } catch (e) { el.textContent = 'Cabinato non raggiungibile: ' + e.message; }
@@ -1228,15 +1228,23 @@ async function vbDetect(which) {
   const inp = $('#vb-' + which); inp.value = 'premi ora il pulsante sul cabinato… (15 s)';
   try {
     const r = await api('volbtn/detect', {});
-    vb[which] = r.code; vb.name = r.name || '';
-    inp.value = `codice ${r.code} · ${r.name}`;
-    toast('Pulsante rilevato', 'ok');
+    vb[which] = r.code; vb.name = r.name || ''; vb[which + 'Phys'] = r.phys || '';
+    inp.value = `codice ${r.code} · ${r.name}` + (r.phys ? ` · ${r.phys}` : '');
+    if (vb.upPhys && vb.downPhys && vb.upPhys !== vb.downPhys) toast('Attenzione: i due pulsanti sono su controller diversi', 'err');
+    else toast('Pulsante rilevato', 'ok');
+    vbPhysLabel();
   } catch (e) { inp.value = ''; toast(e.message, 'err'); }
+}
+function vbPhysLabel() {
+  const ph = vb.upPhys || vb.downPhys || vb.phys || '';
+  const el = $('#vb-phys-label'); if (el) el.textContent = ph ? `(porta ${ph})` : '(porta non ancora rilevata: premi Rileva)';
 }
 async function vbInstall() {
   if (!vb.up || !vb.down) return toast('Rileva prima i due pulsanti', 'err');
+  const only = $('#vb-only').checked, phys = vb.upPhys || vb.downPhys || vb.phys || '';
+  if (only && !phys) return toast('Per limitare a un solo controller serve rilevare i pulsanti (così so su quale porta USB sta)', 'err');
   $('#vb-job').hidden = false; $('#vb-log').textContent = '';
-  try { const r = await api('volbtn/install', {up: vb.up, down: vb.down, step: +$('#vb-pct').value || 5, max: +$('#vb-max').value || 150, boot: +$('#vb-boot').value, interval: +$('#vb-int').value || 1, popup: $('#vb-popup').checked, name: vb.name}); await pollJob(r.job, bindJobUI('vb')); toast('Pulsanti volume attivi', 'ok'); }
+  try { const r = await api('volbtn/install', {up: vb.up, down: vb.down, step: +$('#vb-pct').value || 5, max: +$('#vb-max').value || 150, boot: +$('#vb-boot').value, interval: +$('#vb-int').value || 1, popup: $('#vb-popup').checked, name: vb.name, phys: only ? phys : ''}); await pollJob(r.job, bindJobUI('vb')); toast('Pulsanti volume attivi', 'ok'); }
   catch (e) { toast(e.message, 'err'); }
   $('#vb-job').hidden = true; vbLoad();
 }
