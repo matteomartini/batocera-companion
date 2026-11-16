@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.18.9
+- Libreria ROM: i duplicati (stesso CRC) sono in tabella con la scelta di quale copia togliere e il pulsante **Togli i duplicati selezionati** (cestino del cabinato).
+
 1.18.8
 - Aggiungi ROM: caricando uno zip BIOS arcade (pgm.zip, neogeo.zip…) veniva scritto uno zip vuoto, perché la ricostruzione escludeva le ROM "del BIOS" anche quando il set era il BIOS stesso. Ora viene copiato completo.
 

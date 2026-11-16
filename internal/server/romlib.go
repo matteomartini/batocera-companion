@@ -50,6 +50,11 @@ type RLSystem struct {
 	Files      []RLFile `json:"files"`
 }
 
+type RLDup struct {
+	A string `json:"a"` // primo trovato (da tenere per default)
+	B string `json:"b"` // copia identica (stesso CRC)
+}
+
 type RLDisc struct {
 	System string   `json:"system"`
 	Title  string   `json:"title"`
@@ -70,6 +75,7 @@ type RomlibReport struct {
 	Discs      []RLDisc     `json:"discs"`
 	Overrides  []RLOverride `json:"overrides"`
 	Duplicates []string     `json:"duplicates"`
+	DupPairs   []RLDup      `json:"dup_pairs"`
 }
 
 type invFile struct {
@@ -213,6 +219,7 @@ func (s *Server) buildRomlib(inv *inventory, in *cab.Info, j *jobs.Job) *RomlibR
 				if f.CRC != nil {
 					if p, dup := crcIndex[*f.CRC]; dup && *f.CRC != 0 {
 						rep.Duplicates = append(rep.Duplicates, sys+"/"+f.Path+" = "+p)
+						rep.DupPairs = append(rep.DupPairs, RLDup{A: p, B: sys + "/" + f.Path})
 					} else if *f.CRC != 0 {
 						crcIndex[*f.CRC] = sys + "/" + f.Path
 					}

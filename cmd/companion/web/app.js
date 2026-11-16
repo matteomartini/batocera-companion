@@ -440,8 +440,10 @@ function rlRender(at) {
   h += '</tbody></table>';
   if (rep.discs.length) h += `<p style="margin-top:10px"><b>Multi-disco:</b> ${rep.discs.length} giochi (${noM3U} senza .m3u)</p><ul class="hint">` + rep.discs.map(g => `<li>${esc(g.system)}: ${esc(g.title)} — ${g.files.length} dischi ${g.has_m3u ? '<span class="tag ok">.m3u ok</span>' : '<span class="tag err">dischi separati</span>'}</li>`).join('') + '</ul>';
   if (badCores) h += `<p style="margin-top:10px"><b class="err">Core non installati:</b></p><ul class="hint">` + rep.overrides.filter(o => !o.installed).map(o => `<li>${esc(o.System)}/${esc(o.File)} → <code>${esc(o.Value)}</code></li>`).join('') + '</ul>';
-  if (rep.duplicates && rep.duplicates.length) h += `<p style="margin-top:10px"><b>Duplicati:</b></p><ul class="hint">` + rep.duplicates.slice(0, 50).map(d => `<li>${esc(d)}</li>`).join('') + '</ul>';
+  const dups = rep.dup_pairs || [];
+  if (dups.length) h += `<p style="margin-top:10px"><b>Duplicati</b> (${dups.length} file identici, stesso CRC): per ogni coppia scegli quale copia togliere; va nel cestino del cabinato.</p><table class="tbl" id="rl-dups"><thead><tr><th style="width:30px"><input type="checkbox" onchange="$$('#rl-dups .dup-ck').forEach(c => c.checked = this.checked)"></th><th>Togli</th><th>Tieni</th></tr></thead><tbody>` + dups.slice(0, 200).map((d, i) => `<tr><td><input type="checkbox" class="dup-ck" data-i="${i}" checked></td><td class="mono"><select class="in dup-sel" data-i="${i}" style="font-size:12px;max-width:100%"><option value="${esc(d.b)}">${esc(d.b)}</option><option value="${esc(d.a)}">${esc(d.a)}</option></select></td><td class="mono muted dup-keep" data-i="${i}">${esc(d.a)}</td></tr>`).join('') + `</tbody></table><div class="btns" style="margin-top:8px"><button class="btn" onclick="rlDelDups()">🗑 Togli i duplicati selezionati</button></div>` + (dups.length > 200 ? '<div class="hint">(mostrati i primi 200)</div>' : '');
   $('#rl-out').innerHTML = h;
+  $$('#rl-dups .dup-sel').forEach(sel => sel.onchange = () => { const d = (rlReport.dup_pairs || [])[+sel.dataset.i]; $(`#rl-dups .dup-keep[data-i="${sel.dataset.i}"]`).textContent = sel.value === d.a ? d.b : d.a; });
 }
 function rlDetail(sys) {
   const s = rlReport.systems.find(x => x.name === sys); if (!s) return;
@@ -480,6 +482,24 @@ async function rlTrash(btn, sys, path) {
     const sysRep = rlReport.systems.find(x => x.name === sys);
     if (sysRep) { const i = sysRep.files.findIndex(f => '/userdata/roms/' + sys + '/' + f.path === path); if (i >= 0) { const st = sysRep.files[i].status; sysRep.files.splice(i, 1); if (sysRep[st] > 0) sysRep[st]--; sysRep.total--; } }
   } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+}
+async function rlDelDups() {
+  const dups = rlReport.dup_pairs || [];
+  const bySys = {};
+  $$('#rl-dups .dup-ck').forEach(ck => { if (!ck.checked) return; const d = dups[+ck.dataset.i]; const del = $(`#rl-dups .dup-sel[data-i="${ck.dataset.i}"]`).value; const sys = del.split('/')[0]; (bySys[sys] = bySys[sys] || []).push('/userdata/roms/' + del); });
+  const n = Object.values(bySys).reduce((a, b) => a + b.length, 0); if (!n) return toast('Nessun duplicato selezionato', 'err');
+  if (!await dlg(`<p>Sposto nel cestino del cabinato <b>${n}</b> file duplicati (con le loro grafiche). L'altra copia resta.</p>`, 'Togli')) return;
+  $('#rl-job').hidden = false; $('#rl-log').textContent = '';
+  let moved = 0;
+  try {
+    for (const [sys, paths] of Object.entries(bySys)) {
+      const r = await api('games/delete', {paths, permanent: false, system: sys});
+      const res = await pollJob(r.job, jj => { $('#rl-step').textContent = sys + ': ' + (jj.step || ''); $('#rl-log').textContent += (jj.log || []).join('\n'); });
+      moved += res.moved || 0;
+      if (res.errors && res.errors.length) toast(res.errors.join('; '), 'err');
+    }
+    toast(moved + ' file nel cestino', 'ok'); rlRun();
+  } catch (e) { toast(e.message, 'err'); $('#rl-job').hidden = true; }
 }
 async function rlFix(action) {
   const q = action === 'bios' ? 'Per ogni cartella arcade (fbneo, mame, neogeo, cps…) cerco i BIOS richiesti dai set presenti (es. neogeo.zip per i giochi Neo Geo, pgm.zip per i PGM) che mancano nella cartella, e li copio da /userdata/bios o da un\'altra cartella ROM dove già ci sono. I BIOS copiati vengono nascosti dalla lista di EmulationStation. Procedo?' : action === 'multidisc' ? 'Creo gli .m3u mancanti (dove il sistema li supporta) e nascondo i singoli dischi dalla lista; per i sistemi senza .m3u resta visibile solo il disco 1. Procedo?' : 'Tolgo da batocera.conf le impostazioni per gioco che puntano a core non installati (il gioco tornerà al core predefinito del sistema). Prima salvo una copia di batocera.conf. Procedo?';
