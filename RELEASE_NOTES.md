@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.0
+- Libreria ROM: **stesso gioco in più versioni** (revisioni, regioni, beta, bootleg, hack): per ogni gioco propone la copia da tenere (dump riconosciuto, revisione più alta, World/USA prima di Europa sui sistemi PAL a 50 Hz e Italia/Europa sui sistemi CD, testi in italiano, niente beta/proto/hack/bootleg; per gli arcade il set principale completo, World > Europa > USA > Giappone, niente bootleg) e il pulsante "Togli le versioni in più selezionate" (cestino del cabinato). La scelta si può cambiare gioco per gioco.
+
 1.18.9
 - Libreria ROM: i duplicati (stesso CRC) sono in tabella con la scelta di quale copia togliere e il pulsante **Togli i duplicati selezionati** (cestino del cabinato).
 

@@ -76,6 +76,7 @@ type RomlibReport struct {
 	Overrides  []RLOverride `json:"overrides"`
 	Duplicates []string     `json:"duplicates"`
 	DupPairs   []RLDup      `json:"dup_pairs"`
+	Variants   []RLVariant  `json:"variants"`
 }
 
 type invFile struct {
@@ -295,6 +296,14 @@ func (s *Server) buildRomlib(inv *inventory, in *cab.Info, j *jobs.Job) *RomlibR
 	}
 	if rep.Duplicates == nil {
 		rep.Duplicates = []string{}
+	}
+	dbm := map[string]*dat.DB{}
+	for _, db := range arcade {
+		dbm[db.ID] = db
+	}
+	rep.Variants = s.findVariants(rep, dbm)
+	if rep.Variants == nil {
+		rep.Variants = []RLVariant{}
 	}
 	return rep
 }

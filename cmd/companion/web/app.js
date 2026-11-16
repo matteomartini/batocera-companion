@@ -440,6 +440,12 @@ function rlRender(at) {
   h += '</tbody></table>';
   if (rep.discs.length) h += `<p style="margin-top:10px"><b>Multi-disco:</b> ${rep.discs.length} giochi (${noM3U} senza .m3u)</p><ul class="hint">` + rep.discs.map(g => `<li>${esc(g.system)}: ${esc(g.title)} — ${g.files.length} dischi ${g.has_m3u ? '<span class="tag ok">.m3u ok</span>' : '<span class="tag err">dischi separati</span>'}</li>`).join('') + '</ul>';
   if (badCores) h += `<p style="margin-top:10px"><b class="err">Core non installati:</b></p><ul class="hint">` + rep.overrides.filter(o => !o.installed).map(o => `<li>${esc(o.System)}/${esc(o.File)} → <code>${esc(o.Value)}</code></li>`).join('') + '</ul>';
+  const vars = rep.variants || [];
+  if (vars.length) {
+    const nDel = vars.reduce((a, v) => a + v.files.filter(f => !f.keep).length, 0);
+    h += `<p style="margin-top:10px"><b>Stesso gioco in più versioni</b> (${vars.length} giochi, ${nDel} copie in più): revisioni, regioni, beta, bootleg. Per ciascuno è proposta la copia migliore da tenere (dump riconosciuto, revisione più alta, Italia/Europa/World prima di USA e Giappone, niente beta/proto/hack/bootleg); cambia la scelta se preferisci un'altra versione.</p>
+      <table class="tbl" id="rl-vars"><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="$$('#rl-vars .var-ck').forEach(c => c.checked = this.checked)"></th><th>Gioco</th><th>Versioni</th></tr></thead><tbody>` + vars.slice(0, 300).map((v, i) => `<tr><td><input type="checkbox" class="var-ck" data-i="${i}" checked></td><td><b>${esc(v.title)}</b><div class="muted" style="font-size:11px">${esc(v.system)}</div></td><td>${v.files.map((f, k) => `<label class="chk" style="display:flex;gap:6px;align-items:center;margin:2px 0"><input type="radio" name="var-keep-${i}" value="${k}" ${f.keep ? 'checked' : ''}> <span class="mono" style="font-size:12px">${esc(f.path)}</span> <span class="muted" style="font-size:11px">${esc(f.why)}</span></label>`).join('')}<div class="muted" style="font-size:11px">la versione selezionata resta, le altre vanno nel cestino</div></td></tr>`).join('') + `</tbody></table><div class="btns" style="margin-top:8px"><button class="btn" onclick="rlDelVariants()">🗑 Togli le versioni in più selezionate</button></div>` + (vars.length > 300 ? '<div class="hint">(mostrati i primi 300)</div>' : '');
+  }
   const dups = rep.dup_pairs || [];
   if (dups.length) h += `<p style="margin-top:10px"><b>Duplicati</b> (${dups.length} file identici, stesso CRC): per ogni coppia scegli quale copia togliere; va nel cestino del cabinato.</p><table class="tbl" id="rl-dups"><thead><tr><th style="width:30px"><input type="checkbox" onchange="$$('#rl-dups .dup-ck').forEach(c => c.checked = this.checked)"></th><th>Togli</th><th>Tieni</th></tr></thead><tbody>` + dups.slice(0, 200).map((d, i) => `<tr><td><input type="checkbox" class="dup-ck" data-i="${i}" checked></td><td class="mono"><select class="in dup-sel" data-i="${i}" style="font-size:12px;max-width:100%"><option value="${esc(d.b)}">${esc(d.b)}</option><option value="${esc(d.a)}">${esc(d.a)}</option></select></td><td class="mono muted dup-keep" data-i="${i}">${esc(d.a)}</td></tr>`).join('') + `</tbody></table><div class="btns" style="margin-top:8px"><button class="btn" onclick="rlDelDups()">🗑 Togli i duplicati selezionati</button></div>` + (dups.length > 200 ? '<div class="hint">(mostrati i primi 200)</div>' : '');
   $('#rl-out').innerHTML = h;
@@ -482,6 +488,29 @@ async function rlTrash(btn, sys, path) {
     const sysRep = rlReport.systems.find(x => x.name === sys);
     if (sysRep) { const i = sysRep.files.findIndex(f => '/userdata/roms/' + sys + '/' + f.path === path); if (i >= 0) { const st = sysRep.files[i].status; sysRep.files.splice(i, 1); if (sysRep[st] > 0) sysRep[st]--; sysRep.total--; } }
   } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+}
+async function rlDelVariants() {
+  const vars = rlReport.variants || [];
+  const bySys = {};
+  $$('#rl-vars .var-ck').forEach(ck => {
+    if (!ck.checked) return;
+    const i = +ck.dataset.i, v = vars[i];
+    const keep = +($(`input[name="var-keep-${i}"]:checked`) || {value: 0}).value;
+    v.files.forEach((f, k) => { if (k !== keep) (bySys[v.system] = bySys[v.system] || []).push('/userdata/roms/' + v.system + '/' + f.path); });
+  });
+  const n = Object.values(bySys).reduce((a, b) => a + b.length, 0); if (!n) return toast('Niente da togliere', 'err');
+  if (!await dlg(`<p>Sposto nel cestino del cabinato <b>${n}</b> versioni in più (con le loro grafiche). Per ogni gioco resta la versione selezionata.</p>`, 'Togli')) return;
+  $('#rl-job').hidden = false; $('#rl-log').textContent = '';
+  let moved = 0;
+  try {
+    for (const [sys, paths] of Object.entries(bySys)) {
+      const r = await api('games/delete', {paths, permanent: false, system: sys});
+      const res = await pollJob(r.job, jj => { $('#rl-step').textContent = sys + ': ' + (jj.step || ''); $('#rl-log').textContent += (jj.log || []).join('\n'); });
+      moved += res.moved || 0;
+      if (res.errors && res.errors.length) toast(res.errors.join('; '), 'err');
+    }
+    toast(moved + ' file nel cestino', 'ok'); rlRun();
+  } catch (e) { toast(e.message, 'err'); $('#rl-job').hidden = true; }
 }
 async function rlDelDups() {
   const dups = rlReport.dup_pairs || [];
