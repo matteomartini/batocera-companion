@@ -348,7 +348,7 @@ var reLsblkKV = regexp.MustCompile(`([A-Z]+)="([^"]*)"`)
 func (s *Server) hBackupUSB(w http.ResponseWriter, r *http.Request) (any, error) {
 	if r.Method != http.MethodPost {
 		res, err := s.ssh.RunTimeout(`echo "@@mounted"
-for m in /media/*; do [ -d "$m" ] || continue; mountpoint -q "$m" || continue; df -hP "$m" | awk -v m="$m" -v fs="$(findmnt -no FSTYPE "$m" 2>/dev/null)" 'NR==2{print m"\t"$2"\t"$4"\t"fs}'; done
+for m in /media/*; do [ -d "$m" ] || continue; awk -v m="$m" '$2==m{f=1}END{exit !f}' /proc/mounts || continue; df -hP "$m" | awk -v m="$m" -v fs="$(findmnt -no FSTYPE "$m" 2>/dev/null)" 'NR==2{print m"\t"$2"\t"$4"\t"fs}'; done
 echo "@@blk"
 # partizioni (chiave=valore, i campi vuoti restano vuoti)
 lsblk -Pno NAME,FSTYPE,SIZE,LABEL,MOUNTPOINT,TYPE,TRAN 2>/dev/null
@@ -421,7 +421,7 @@ case "$fs" in
   exfat) mount -t exfat -o rw,noatime,umask=000 "$dev" "$mp" 2>/tmp/bc_mount.err;;
   *) mount -o rw,noatime "$dev" "$mp" 2>/tmp/bc_mount.err;;
 esac
-if mountpoint -q "$mp"; then echo "OK $mp $(findmnt -no OPTIONS "$mp" | cut -d, -f1)"; else echo "FAIL"; cat /tmp/bc_mount.err; dmesg 2>/dev/null | tail -5; rmdir "$mp" 2>/dev/null; fi`
+if awk -v m="$mp" '$2==m{f=1}END{exit !f}' /proc/mounts; then echo "OK $mp $(findmnt -no OPTIONS "$mp" | cut -d, -f1)"; else echo "FAIL"; cat /tmp/bc_mount.err; dmesg 2>/dev/null | tail -5; rmdir "$mp" 2>/dev/null; fi`
 		res, err := s.ssh.RunTimeout(script, time.Minute)
 		if err != nil {
 			return nil, err
