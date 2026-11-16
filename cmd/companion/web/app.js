@@ -444,7 +444,28 @@ function rlDetail(sys) {
   const s = rlReport.systems.find(x => x.name === sys); if (!s) return;
   const rows = s.files.filter(f => f.status !== 'ok' && f.status !== 'aux');
   const lab = {unknown: 'sconosciuto', incomplete: 'set incompleto', bad: 'file danneggiato', hidden_ext: 'estensione ignorata'};
-  dlg(`<p><b>${esc(sys)}</b>: ${rows.length} file da controllare</p><div style="max-height:60vh;overflow:auto"><table class="tbl"><thead><tr><th>File</th><th>Stato</th><th>Note</th></tr></thead><tbody>${rows.map(f => `<tr><td class="mono">${esc(f.path)}</td><td><span class="tag ${f.status === 'incomplete' ? 'err' : 'miss'}">${lab[f.status] || f.status}</span></td><td class="hint">${esc(f.name || '')} ${esc(f.detail || '')}${f.missing ? ` (mancano ${f.missing})` : ''}</td></tr>`).join('')}</tbody></table></div>`, 'OK');
+  const full = f => '/userdata/roms/' + sys + '/' + f.path;
+  dlg(`<p><b>${esc(sys)}</b>: ${rows.length} file da controllare</p><p class="hint">▶ Prova avvia il gioco sul cabinato così com'è: se parte e gira, tienilo anche se il set risulta incompleto (spesso mancano solo ROM opzionali); se non parte, 🗑 lo sposta nel cestino del cabinato.</p><div style="max-height:60vh;overflow:auto"><table class="tbl"><thead><tr><th>File</th><th>Stato</th><th>Note</th><th></th></tr></thead><tbody>${rows.map(f => `<tr data-rl="${esc(full(f))}"><td class="mono">${esc(f.path)}</td><td><span class="tag ${f.status === 'incomplete' ? 'err' : 'miss'}">${lab[f.status] || f.status}</span></td><td class="hint">${esc(f.name || '')} ${esc(f.detail || '')}${f.missing ? ` (mancano ${f.missing})` : ''}</td><td class="nowrap"><button class="btn sm" title="Avvia sul cabinato" onclick="rlTry(this, '${esc(full(f))}')">▶ Prova</button> <button class="btn sm ghost" title="Chiudi il gioco sul cabinato" onclick="cmd('emukill')">⏹</button> <button class="btn sm ghost" title="Sposta nel cestino del cabinato" onclick="rlTrash(this, '${esc(sys)}', '${esc(full(f))}')">🗑</button></td></tr>`).join('')}</tbody></table></div>`, 'Chiudi');
+}
+async function rlTry(btn, path) {
+  btn.disabled = true;
+  try { await api('cmd', {action: 'launch', arg: path}); toast('Avviato sul cabinato: guarda lo schermo. ⏹ per chiuderlo.', 'ok'); }
+  catch (e) { toast(e.message, 'err'); }
+  setTimeout(() => btn.disabled = false, 3000);
+}
+async function rlTrash(btn, sys, path) {
+  const tr = btn.closest('tr');
+  btn.disabled = true;
+  try {
+    await api('cmd', {action: 'emukill'}).catch(() => {});
+    const r = await api('games/delete', {paths: [path], permanent: false, system: sys});
+    const res = await pollJob(r.job, () => {});
+    if (res.errors && res.errors.length) { toast(res.errors.join('; '), 'err'); btn.disabled = false; return; }
+    toast('Nel cestino: ' + path.split('/').pop(), 'ok');
+    tr.style.opacity = .4; tr.querySelectorAll('button').forEach(b => b.disabled = true);
+    const sysRep = rlReport.systems.find(x => x.name === sys);
+    if (sysRep) { const i = sysRep.files.findIndex(f => '/userdata/roms/' + sys + '/' + f.path === path); if (i >= 0) { const st = sysRep.files[i].status; sysRep.files.splice(i, 1); if (sysRep[st] > 0) sysRep[st]--; sysRep.total--; } }
+  } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
 }
 async function rlFix(action) {
   const q = action === 'multidisc' ? 'Creo gli .m3u mancanti (dove il sistema li supporta) e nascondo i singoli dischi dalla lista; per i sistemi senza .m3u resta visibile solo il disco 1. Procedo?' : 'Tolgo da batocera.conf le impostazioni per gioco che puntano a core non installati (il gioco tornerà al core predefinito del sistema). Prima salvo una copia di batocera.conf. Procedo?';
