@@ -18,6 +18,7 @@ import (
 	"batocompanion/internal/checkup"
 	"batocompanion/internal/dat"
 	"batocompanion/internal/jobs"
+	"batocompanion/internal/roms"
 )
 
 // Libreria ROM: inventario completo del cabinato confrontato con i DAT.
@@ -471,6 +472,18 @@ func (s *Server) romlibCopyBios(j *jobs.Job, rep *RomlibReport) (any, error) {
 					}
 				}
 				cur = next
+			}
+		}
+		// device con ROM (MAME moderno): segabill, qsound, m68705… stanno in zip separati
+		for _, f := range sy.Files {
+			if f.Set == "" || dbs[f.DB] == nil {
+				continue
+			}
+			devs, _ := roms.SetExtras(dbs[f.DB], f.Set)
+			for _, d := range devs {
+				if g := dbs[f.DB].Games[d]; g != nil {
+					req[d] = g.Desc + " (device)"
+				}
 			}
 		}
 		for b, d := range req {

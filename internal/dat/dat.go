@@ -36,6 +36,7 @@ type Game struct {
 	IsDevice bool
 	Roms     []Rom
 	Devices  []string // device_ref
+	Disks    []string // CHD richiesti (nome senza estensione; nodump esclusi)
 	Year     string
 	Manuf    string
 }
@@ -220,6 +221,16 @@ func (db *DB) parseXML(r io.Reader) error {
 			}
 			for _, d := range xg.Devs {
 				g.Devices = append(g.Devices, d.Name)
+			}
+			for _, xd := range xg.Disks {
+				if xd.Status == "nodump" || xd.Opt == "yes" {
+					continue
+				}
+				n := xd.Name
+				if xd.Merge != "" {
+					n = xd.Merge // il CHD è quello del parent
+				}
+				g.Disks = append(g.Disks, n)
 			}
 			if g.Name != "" {
 				db.add(g)

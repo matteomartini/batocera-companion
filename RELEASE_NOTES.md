@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.19.5
+- Set MAME: il controllo considera anche gli zip dei **device** richiesti da MAME moderno (es. segabill per i Model 2: "epr-18022.ic2 NOT FOUND (tried in segabill vf2)") e i **CHD** (dischi) nelle sottocartelle. Lo segnalano 🩺, "Controlla tutti i set" e il check-up; "Copia BIOS e device nelle cartelle ROM" recupera anche i device da /userdata/bios o da altre cartelle.
+
 1.19.4
 - Giochi → **Controlla tutti i set** (cartelle arcade): per ogni zip dice se è un set conosciuto, se è completo per il core in uso, per quale core lo è, se è un BIOS, se è vuoto, o se "non è questo gioco" (nome da set arcade ma nessun file corrisponde: ROM console finita in mame). Con un clic imposta il core giusto gioco per gioco (batocera.conf salvato prima).
 

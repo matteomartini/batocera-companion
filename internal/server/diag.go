@@ -64,7 +64,7 @@ func (s *Server) diagGame(j *jobs.Job, sys, p string, run bool) (any, error) {
 	script := "f=" + q(p) + "; echo '@@file'; ls -la \"$f\" 2>&1; echo '@@conf'; grep -E " + q("^"+regexp.QuoteMeta(sys)+`(\[|\.)`) + " /userdata/system/batocera.conf 2>/dev/null\n" +
 		"echo '@@cores'; ls /usr/lib/libretro/ 2>/dev/null | sed 's/_libretro.so//' | tr '\\n' ' '\n" +
 		"echo '@@crc'; python3 -c " + q(zipCrcPy) + " \"$f\"\n" +
-		"echo '@@dir'; ls " + q("/userdata/roms/"+sys+"/") + " 2>/dev/null | tr '\\n' ' '"
+		"echo '@@dir'; ls " + q("/userdata/roms/"+sys+"/") + " 2>/dev/null | tr '\\n' ' '; echo; echo '@@chd'; find " + q("/userdata/roms/"+sys+"/") + " -maxdepth 2 -iname '*.chd' 2>/dev/null | sed 's|.*/roms/" + sys + "/||' | tr '\\n' ' '"
 	res, err := s.ssh.RunTimeout(script, time.Minute)
 	if err != nil {
 		return nil, err
@@ -78,6 +78,11 @@ func (s *Server) diagGame(j *jobs.Job, sys, p string, run bool) (any, error) {
 	dirFiles := map[string]bool{}
 	for _, f := range strings.Fields(sec["dir"]) {
 		dirFiles[strings.ToLower(f)] = true
+	}
+	chds := map[string]bool{} // "set/disk.chd" e "disk.chd"
+	for _, f := range strings.Fields(sec["chd"]) {
+		chds[strings.ToLower(f)] = true
+		chds[strings.ToLower(path.Base(f))] = true
 	}
 	// override per gioco / per sistema
 	gameCore, gameEmu, sysCore := "", "", ""
@@ -148,9 +153,21 @@ func (s *Server) diagGame(j *jobs.Job, sys, p string, run bool) (any, error) {
 			}
 			known = true
 			installed := contains(cores, id) || id == "mame"
-			m := map[string]any{"core": id, "have": h, "total": t, "missing": missing, "bios": bios, "installed": installed, "complete": len(missing) == 0 && t > 0, "bios_missing": bios != "" && !dirFiles[bios+".zip"]}
+			devs, disks := roms.SetExtras(db, strings.ToLower(stem))
+			var missDev, missDisk []string
+			for _, d := range devs {
+				if !dirFiles[d+".zip"] {
+					missDev = append(missDev, d+".zip")
+				}
+			}
+			for _, d := range disks {
+				if !chds[strings.ToLower(stem+"/"+d+".chd")] && !chds[strings.ToLower(d+".chd")] {
+					missDisk = append(missDisk, d+".chd")
+				}
+			}
+			m := map[string]any{"core": id, "have": h, "total": t, "missing": missing, "bios": bios, "installed": installed, "complete": len(missing) == 0 && t > 0, "bios_missing": bios != "" && !dirFiles[bios+".zip"], "missing_devices": missDev, "missing_disks": missDisk}
 			matches = append(matches, m)
-			if m["complete"].(bool) && installed && !m["bios_missing"].(bool) && bestCore == "" {
+			if m["complete"].(bool) && installed && !m["bios_missing"].(bool) && len(missDev) == 0 && len(missDisk) == 0 && bestCore == "" {
 				bestCore = id
 			}
 		}
@@ -176,8 +193,14 @@ func (s *Server) diagGame(j *jobs.Job, sys, p string, run bool) (any, error) {
 				if m["bios_missing"].(bool) {
 					st += fmt.Sprintf(" · BIOS %s.zip NON presente nella cartella", m["bios"])
 				}
+				if md := m["missing_devices"].([]string); len(md) > 0 {
+					st += " · mancano i device: " + strings.Join(md, ", ")
+				}
+				if md := m["missing_disks"].([]string); len(md) > 0 {
+					st += " · mancano i CHD: " + strings.Join(md, ", ") + " (in roms/" + sys + "/" + stem + "/)"
+				}
 				lines = append(lines, fmt.Sprintf("%s%s: %s", m["core"], inst, st))
-				if m["core"] == coreUsed && m["complete"].(bool) && !m["bios_missing"].(bool) {
+				if m["core"] == coreUsed && m["complete"].(bool) && !m["bios_missing"].(bool) && len(m["missing_devices"].([]string)) == 0 && len(m["missing_disks"].([]string)) == 0 {
 					curOK = true
 				}
 			}
@@ -194,10 +217,19 @@ func (s *Server) diagGame(j *jobs.Job, sys, p string, run bool) (any, error) {
 				add("error", "Il set non è completo per nessun core installato", strings.Join(lines, "\n")+"\n\nServe lo zip della versione giusta: Aggiungi ROM lo verifica prima di copiarlo e, se trova i file mancanti in altri zip, ricostruisce il set.", "")
 			}
 			for _, m := range matches {
-				if m["bios_missing"].(bool) && (m["core"] == coreUsed || m["core"] == bestCore) {
-					add("error", fmt.Sprintf("Manca il BIOS %s.zip nella cartella %s", m["bios"], sys), "I giochi di questa scheda caricano le ROM di sistema da quello zip, nella stessa cartella del gioco. Libreria ROM → \"Copia i BIOS nelle cartelle ROM\" lo sistema se il BIOS è in /userdata/bios.", "")
-					break
+				if m["core"] != coreUsed && m["core"] != bestCore {
+					continue
 				}
+				if m["bios_missing"].(bool) {
+					add("error", fmt.Sprintf("Manca il BIOS %s.zip nella cartella %s", m["bios"], sys), "I giochi di questa scheda caricano le ROM di sistema da quello zip, nella stessa cartella del gioco. Libreria ROM → \"Copia i BIOS nelle cartelle ROM\" lo sistema se il BIOS è in /userdata/bios.", "")
+				}
+				if md := m["missing_devices"].([]string); len(md) > 0 {
+					add("error", "Mancano gli zip dei device richiesti da MAME: "+strings.Join(md, ", "), "MAME moderno carica alcune parti della scheda (tabellone, chip audio, I/O) da set separati, come i BIOS. Vanno nella stessa cartella del gioco; Libreria ROM → \"Copia i BIOS nelle cartelle ROM\" li copia anche da /userdata/bios o da un'altra cartella ROM se ce li hai.", "")
+				}
+				if md := m["missing_disks"].([]string); len(md) > 0 {
+					add("error", "Mancano i CHD: "+strings.Join(md, ", "), "Questo gioco usa un disco (CD/HD) oltre alle ROM: il file .chd va in roms/"+sys+"/"+stem+"/ (sottocartella con il nome del set).", "")
+				}
+				break
 			}
 		}
 	}
@@ -394,6 +426,12 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 		for _, n := range names {
 			present[strings.ToLower(n)] = true
 		}
+		chds := map[string]bool{}
+		for _, f := range strings.Fields(sec["chd"]) {
+			chds[strings.ToLower(f)] = true
+			chds[strings.ToLower(path.Base(f))] = true
+		}
+		var needExtras []string // "device.zip" mancanti in tutta la cartella (per il riepilogo)
 		type row struct {
 			File     string            `json:"file"`
 			Current  string            `json:"current"`  // core in uso (override o sistema)
@@ -454,6 +492,18 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 					isBios = true
 					continue
 				}
+				devs, disks := roms.SetExtras(db, stem)
+				var missDev, missDisk []string
+				for _, d := range devs {
+					if !present[d+".zip"] {
+						missDev = append(missDev, d+".zip")
+					}
+				}
+				for _, d := range disks {
+					if !chds[strings.ToLower(stem+"/"+d+".chd")] && !chds[strings.ToLower(d+".chd")] {
+						missDisk = append(missDisk, d+".chd")
+					}
+				}
 				switch {
 				case !installed:
 					rw.Cores[id] = "non installato"
@@ -461,6 +511,13 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 					rw.Cores[id] = fmt.Sprintf("mancano %d/%d", len(missing), t)
 				case bios != "" && !present[bios+".zip"]:
 					rw.Cores[id] = "manca " + bios + ".zip"
+				case len(missDev) > 0:
+					rw.Cores[id] = "manca device " + strings.Join(missDev, ", ")
+					for _, d := range missDev {
+						needExtras = appendOnceS(needExtras, d)
+					}
+				case len(missDisk) > 0:
+					rw.Cores[id] = "manca CHD " + strings.Join(missDisk, ", ")
 				default:
 					_ = h
 					rw.Cores[id] = "ok"
@@ -496,7 +553,16 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 			counts[rw.Status]++
 			rows = append(rows, rw)
 		}
-		return map[string]any{"system": sys, "rows": rows, "counts": counts, "sys_core": sysCore}, nil
+		return map[string]any{"system": sys, "rows": rows, "counts": counts, "sys_core": sysCore, "missing_devices": needExtras}, nil
 	})
 	return map[string]any{"job": j.ID}, nil
+}
+
+func appendOnceS(l []string, v string) []string {
+	for _, x := range l {
+		if x == v {
+			return l
+		}
+	}
+	return append(l, v)
 }

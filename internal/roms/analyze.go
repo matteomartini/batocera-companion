@@ -1112,3 +1112,33 @@ func SetMissing(db *dat.DB, name string, have map[uint32]bool) (haveN, total int
 	}
 	return haveN, total, missing, b, true
 }
+
+// SetExtras: ciò che il set richiede OLTRE allo zip del gioco e al BIOS:
+// zip dei device con ROM (es. segabill per i Model 2) e CHD (dischi), compresi quelli
+// ereditati dal parent.
+func SetExtras(db *dat.DB, name string) (devices []string, disks []string) {
+	g := db.Games[name]
+	if g == nil {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	cur := g
+	for cur != nil && !seen[cur.Name] {
+		seen[cur.Name] = true
+		for _, d := range cur.Devices {
+			if dg := db.Games[d]; dg != nil && len(dg.Roms) > 0 {
+				devices = appendOnce(devices, d)
+			}
+		}
+		if cur == g {
+			for _, d := range cur.Disks {
+				disks = appendOnce(disks, d)
+			}
+		}
+		if cur.CloneOf == "" {
+			break
+		}
+		cur = db.Games[cur.CloneOf]
+	}
+	return devices, disks
+}
