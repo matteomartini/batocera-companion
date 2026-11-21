@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -112,6 +113,12 @@ func (s *Server) hRomsApply(w http.ResponseWriter, r *http.Request) (any, error)
 	}
 	j := s.jobs.Start("Copia ROM", func(j *jobs.Job) (any, error) {
 		ap := &roms.Applier{SSH: s.ssh, ES: s.es, Tmp: filepath.Join(s.tmpDir, "rebuild-"+j.ID), Log: func(m string) { j.Logf("%s", m) }, Step: func(p float64, st string) { j.SetProgress(p, st) }}
+		ap.PostInstall = func(ctx context.Context, kind string) error {
+			if kind == "spacecadet" {
+				return s.installSpaceCadet(ctx, func(f string, a ...any) { j.Logf(f, a...) })
+			}
+			return nil
+		}
 		defer os.RemoveAll(ap.Tmp)
 		res, err := ap.Apply(j.Context(), sess)
 		s.invalidateInfo()

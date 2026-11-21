@@ -1,5 +1,5 @@
 ; Batocera Companion - installer Windows (NSIS)
-!define VERSION "1.20.0"
+!define VERSION "1.21.0"
 !define APPNAME "Batocera Companion"
 !define EXE "BatoceraCompanion.exe"
 Unicode true

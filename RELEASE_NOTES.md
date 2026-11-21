@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.0
+- **3D Pinball - Space Cadet**: trascina in Aggiungi ROM la cartella Pinball di Windows XP (o uno zip con PINBALL.DAT, .MID, SOUND*.WAV) e il Companion mette i file dati in ports/SpaceCadetPinball/ e installa il gioco in Ports (port SDL2 nativo Linux di k4zmu2a, incluso nel programma, licenza MIT) con i comandi già impostati per il cabinato: colonna sinistra dei tasti = flipper sinistro, colonna destra = flipper destro, tasti centrali = lancio pallina, joystick = scossa, Start = nuova partita, hotkey+Start = esci (F8 in gioco per cambiarli). Riconosce anche CADET.DAT di Full Tilt!.
+
 1.20.0
 - **Visual Pinball**: Aggiungi ROM riconosce i tavoli .vpx (cartella per tavolo, con .directb2s/.vbs/.ini dello stesso nome) e le ROM PinMAME (riconosciute dal DAT di MAME, verificate per CRC: se incomplete lo dice, perché il flipper non si avvia) e le mette in roms/ accanto al tavolo che le usa (letto dallo script del .vpx, anche per i tavoli già sul cabinato). Giochi → vpinball → "Controlla tutti i set": per ogni tavolo, ROM presente e completa.
 

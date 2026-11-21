@@ -179,6 +179,11 @@ func (a *Analyzer) Analyze(ctx context.Context, paths []string) (*Session, error
 		it := &Item{ID: fmt.Sprintf("i%d", len(s.path)+n*7919), Sources: []string{s.path}, DisplayName: filepath.Base(s.path), Size: s.size, ext: strings.ToLower(filepath.Ext(s.path)), entries: s.entries}
 		it.ID = fmt.Sprintf("i%d", n)
 		if IsArchive(s.path) {
+			// file dati di 3D Pinball (PINBALL.DAT)?
+			if a.trySpaceCadet(it, s.entries) {
+				sess.Items = append(sess.Items, it)
+				continue
+			}
 			// arcade?
 			if a.tryArcade(it, strings.ToLower(base), arcadeDBs, pool, hasArcadeDat) {
 				sess.Items = append(sess.Items, it)
@@ -331,6 +336,8 @@ func (a *Analyzer) Analyze(ctx context.Context, paths []string) (*Session, error
 
 	// 3a. Visual Pinball: cartella per tavolo e ROM PinMAME accanto al tavolo
 	a.pinballLayout(sess.Items)
+	// 3b. 3D Pinball Space Cadet: PINBALL.DAT + file della stessa cartella → ports/SpaceCadetPinball/
+	a.spaceCadetLayout(sess.Items)
 	// 3. doppioni: stesso set arcade da più sorgenti → resta il migliore
 	best := map[string]*Item{}
 	for _, it := range sess.Items {

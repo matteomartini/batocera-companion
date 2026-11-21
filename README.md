@@ -8,7 +8,7 @@ Tutto passa da SSH + l'API HTTP di EmulationStation: niente da installare sul ca
 
 ## Cosa fa
 
-- **Aggiungi ROM** — scegli file o cartelle sul PC: riconosce gioco e sistema (DAT No-Intro/Redump/FBNeo/MAME, intestazioni dei file), verifica e **ricostruisce i set arcade** dai CRC (anche da zip con nomi sbagliati o da parent/merged set), sceglie il core in base alle tue preferenze, converte in CHD, copia nella cartella giusta e rigenera la lista giochi. Copia e analisi girano in parallelo.
+- **Aggiungi ROM** — scegli file o cartelle sul PC: riconosce gioco e sistema (DAT No-Intro/Redump/FBNeo/MAME, intestazioni dei file), verifica e **ricostruisce i set arcade** dai CRC (anche da zip con nomi sbagliati o da parent/merged set), sceglie il core in base alle tue preferenze, converte in CHD, copia nella cartella giusta e rigenera la lista giochi. Copia e analisi girano in parallelo. Gestisce anche Visual Pinball (tavoli .vpx + ROM PinMAME) e **3D Pinball - Space Cadet** (dai file dati di Windows XP: installa il port SDL2 in Ports).
 - **Giochi** — elenco da EmulationStation, avvio, scheda con metadati e grafiche (caricamento manuale), scraper libretro-thumbnails o ScreenScraper, nomi puliti, multi-disco (.m3u), cestino, conversione dei set alla versione di MAME installata.
 - **Check-up** — controller, hotkey, BIOS, ROM, video (60 Hz!), audio, rete, prestazioni, con correzioni a un clic e backup automatico di batocera.conf. "Perché scatta?" diagnostica stutter e tearing. Analisi completa della libreria ROM. Report PDF.
 - **Emulatori** — impostazioni per sistema spiegate, con valori consigliati per la CPU del cabinato.
@@ -42,4 +42,4 @@ Genera il server Linux per il cabinato, l'exe Windows, l'installer e lo zip in `
 
 ## Licenza
 
-MIT — vedi `LICENSE`. ScreenScraper richiede credenziali sviluppatore proprie (si richiedono sul loro forum); questo programma non ne include.
+MIT — vedi `LICENSE`. Include il binario Linux di [SpaceCadetPinball](https://github.com/k4zmu2a/SpaceCadetPinball) (MIT, k4zmu2a); i file dati del gioco non sono inclusi. ScreenScraper richiede credenziali sviluppatore proprie (si richiedono sul loro forum); questo programma non ne include.

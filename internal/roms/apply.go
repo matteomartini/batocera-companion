@@ -22,6 +22,9 @@ type Applier struct {
 	Log  func(string)
 	Step func(float64, string)
 	Tmp  string
+	// PostInstall viene chiamato una volta per ogni Kind speciale copiato (es. "spacecadet":
+	// installa il gioco in Ports dopo i file dati).
+	PostInstall func(ctx context.Context, kind string) error
 }
 
 type ApplyResult struct {
@@ -60,6 +63,7 @@ func (ap *Applier) Apply(ctx context.Context, s *Session) (*ApplyResult, error) 
 	var done int64
 	perGame := map[string]string{} // chiave batocera.conf → valore
 	var chdJobs []string
+	kinds := map[string]bool{}
 	for i, it := range todo {
 		if ctx.Err() != nil {
 			return res, ctx.Err()
@@ -97,6 +101,7 @@ func (ap *Applier) Apply(ctx context.Context, s *Session) (*ApplyResult, error) 
 			continue
 		}
 		res.Copied++
+		kinds[it.Kind] = true
 		ap.logf("✓ %s → %s/%s", name, it.System, it.DestName)
 		if it.PerGameCore && it.Core != "" && it.Kind == "arcade" {
 			perGame[fmt.Sprintf(`%s["%s"].core`, it.System, it.DestName)] = it.Core
@@ -116,6 +121,14 @@ func (ap *Applier) Apply(ctx context.Context, s *Session) (*ApplyResult, error) 
 			ap.logf("✗ CHD %s: %v", path.Base(f[1]), err)
 		} else {
 			ap.logf("✓ CHD %s", path.Base(f[1]))
+		}
+	}
+	// installazioni collegate (Space Cadet Pinball)
+	if ap.PostInstall != nil && kinds["spacecadet"] {
+		ap.Step(-1, "Installo Space Cadet Pinball in Ports")
+		if err := ap.PostInstall(ctx, "spacecadet"); err != nil {
+			res.Errors = append(res.Errors, "Space Cadet Pinball: "+err.Error())
+			ap.logf("✗ installazione Space Cadet Pinball: %v", err)
 		}
 	}
 	// core per gioco
