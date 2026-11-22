@@ -1231,7 +1231,7 @@ func (a *Analyzer) pinball(it *Item, dbs []arcadeDB) bool {
 		it.SystemOptions = []string{"vpinball"}
 		it.Core = ""
 		it.GameName = g.Desc
-		it.DestName = "roms/" + it.SetName + ".zip" // affinato in pinballLayout
+		it.DestName = "pinmame/roms/" + it.SetName + ".zip" // affinato in pinballLayout
 		it.Action = "copy"
 		it.Files = nil
 		it.Confidence = "green"
@@ -1322,14 +1322,14 @@ func (a *Analyzer) pinballLayout(items []*Item) {
 	}
 	for _, it := range pins {
 		if t := romTable[it.SetName]; t != "" && t != "." {
-			it.DestName = t + "/roms/" + it.SetName + ".zip"
-			it.Notes = appendOnce(it.Notes, "va accanto al tavolo: vpinball/"+t+"/roms/")
+			it.DestName = t + "/pinmame/roms/" + it.SetName + ".zip"
+			it.Notes = appendOnce(it.Notes, "va accanto al tavolo: vpinball/"+t+"/pinmame/roms/ (layout del PinMAME plugin di Batocera 43)")
 		} else if t == "." {
-			it.DestName = "roms/" + it.SetName + ".zip"
-			it.Notes = appendOnce(it.Notes, "il tavolo sta nella radice di vpinball: ROM in vpinball/roms/")
+			it.DestName = "pinmame/roms/" + it.SetName + ".zip"
+			it.Notes = appendOnce(it.Notes, "il tavolo sta nella radice di vpinball: ROM in vpinball/pinmame/roms/")
 		} else {
-			it.DestName = "roms/" + it.SetName + ".zip"
-			it.Notes = appendOnce(it.Notes, "nessun tavolo trovato che usi questa ROM: copiata in vpinball/roms/ (vale per i tavoli nella radice); se aggiungi il tavolo dopo, ricarica la ROM insieme")
+			it.DestName = "pinmame/roms/" + it.SetName + ".zip"
+			it.Notes = appendOnce(it.Notes, "nessun tavolo trovato che usi questa ROM: copiata in vpinball/pinmame/roms/, la cartella PinMAME comune che il Companion imposta in VPinballX.ini (vale per tutti i tavoli)")
 		}
 	}
 }

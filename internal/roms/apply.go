@@ -124,6 +124,11 @@ func (ap *Applier) Apply(ctx context.Context, s *Session) (*ApplyResult, error) 
 		}
 	}
 	// installazioni collegate (Space Cadet Pinball)
+	if ap.PostInstall != nil && kinds["pinmame"] {
+		if err := ap.PostInstall(ctx, "pinmame"); err != nil {
+			ap.logf("⚠ VPinballX.ini: %v", err)
+		}
+	}
 	if ap.PostInstall != nil && kinds["spacecadet"] {
 		ap.Step(-1, "Installo Space Cadet Pinball in Ports")
 		if err := ap.PostInstall(ctx, "spacecadet"); err != nil {

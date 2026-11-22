@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.1
+- **Visual Pinball, ROM nel posto giusto**: Batocera 43 usa il PinMAME plugin di VPX, che cerca la ROM in `<cartella del tavolo>/pinmame/roms/` (non più in `roms/`): con il vecchio layout il tavolo partiva senza ROM (niente start, moneta, flipper). Aggiungi ROM ora mette le ROM PinMAME in `pinmame/roms/` e imposta in VPinballX.ini la cartella PinMAME comune `/userdata/roms/vpinball/pinmame` (le ROM lì valgono per tutti i tavoli). Giochi → vpinball → "Controlla tutti i set" trova le ROM nel posto sbagliato e "Applica" le sposta e sistema VPinballX.ini.
+
 1.21.0
 - **3D Pinball - Space Cadet**: trascina in Aggiungi ROM la cartella Pinball di Windows XP (o uno zip con PINBALL.DAT, .MID, SOUND*.WAV) e il Companion mette i file dati in ports/SpaceCadetPinball/ e installa il gioco in Ports (port SDL2 nativo Linux di k4zmu2a, incluso nel programma, licenza MIT) con i comandi già impostati per il cabinato: colonna sinistra dei tasti = flipper sinistro, colonna destra = flipper destro, tasti centrali = lancio pallina, joystick = scossa, Start = nuova partita, hotkey+Start = esci (F8 in gioco per cambiarli). Riconosce anche CADET.DAT di Full Tilt!.
 

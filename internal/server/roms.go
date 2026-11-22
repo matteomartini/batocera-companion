@@ -117,6 +117,9 @@ func (s *Server) hRomsApply(w http.ResponseWriter, r *http.Request) (any, error)
 			if kind == "spacecadet" {
 				return s.installSpaceCadet(ctx, func(f string, a ...any) { j.Logf(f, a...) })
 			}
+			if kind == "pinmame" {
+				return s.vpxGlobalPinmame(ctx, func(f string, a ...any) { j.Logf(f, a...) })
+			}
 			return nil
 		}
 		defer os.RemoveAll(ap.Tmp)

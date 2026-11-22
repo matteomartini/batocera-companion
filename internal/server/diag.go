@@ -345,7 +345,10 @@ func (s *Server) hGamesDiagAll(w http.ResponseWriter, r *http.Request) (any, err
 	if err := readJSON(r, &req); err != nil {
 		return nil, err
 	}
-	if req.System == "vpinball" && len(req.Apply) == 0 {
+	if req.System == "vpinball" {
+		if len(req.Apply) > 0 {
+			return s.vpinballApply(req.Apply)
+		}
 		return s.diagVpinball()
 	}
 	if req.System == "" || !isArcadeSys(req.System) {
@@ -594,7 +597,7 @@ func appendOnceS(l []string, v string) []string {
 }
 
 // diagVpinball: per ogni tavolo .vpx, la ROM PinMAME che usa: c'è? è completa (DAT MAME)?
-const vpxScanPy = `import os, re, zipfile, json
+const vpxScanPy = `import os, re, zipfile, json, configparser
 root='/userdata/roms/vpinball'; out=[]
 rx=re.compile(rb'cGameName\s*=\s*"([^"]+)"', re.I)
 def rom_of(p):
@@ -604,21 +607,49 @@ def rom_of(p):
         m=rx.search(data)
         return m.group(1).decode(errors='ignore').lower() if m else ''
     except Exception: return ''
+glob=''
+try:
+    c=configparser.RawConfigParser(allow_no_value=True, strict=False); c.optionxform=str
+    c.read('/userdata/system/configs/vpinball/VPinballX.ini')
+    glob=c.get('Plugin.PinMAME','PinMAMEPath',fallback='').strip()
+except Exception: pass
+home=os.environ.get('HOME') or '/userdata/system'
+def ci(d):
+    if os.path.isdir(d): return d
+    par,name=os.path.split(d)
+    if not os.path.isdir(par): return ''
+    for n in os.listdir(par):
+        if n.lower()==name.lower() and os.path.isdir(os.path.join(par,n)): return os.path.join(par,n)
+    return ''
+def find(d, rom):
+    d=ci(d)
+    if not d: return ''
+    for n in os.listdir(d):
+        if n.lower()==rom+'.zip' and os.path.isfile(os.path.join(d,n)): return os.path.join(d,n)
+    return ''
 for dp, dn, fn in os.walk(root):
     if dp.count('/')-root.count('/')>1: continue
     for n in fn:
         if not n.lower().endswith('.vpx'): continue
         p=os.path.join(dp,n); rom=rom_of(p); rel=os.path.relpath(p,root)
-        found=''; crcs=[]
+        found=''; crcs=[]; wrong=''
         if rom:
-            for c in [os.path.join(dp,'roms',rom+'.zip'), os.path.join(dp,'pinmame','roms',rom+'.zip'), os.path.join(root,'roms',rom+'.zip'), '/userdata/system/configs/vpinball/pinmame/roms/'+rom+'.zip']:
-                if os.path.isfile(c):
-                    found=c
-                    try: crcs=[i.CRC for i in zipfile.ZipFile(c).infolist()]
-                    except Exception: crcs=[]
-                    break
-        out.append({"table":rel,"rom":rom,"zip":found,"crcs":crcs})
-print(json.dumps(out))`
+            good=[os.path.join(dp,'pinmame','roms')]
+            if glob and glob not in ('./','.'): good.append(os.path.join(glob,'roms'))
+            good.append(os.path.join(home,'.pinmame','roms'))
+            for g in good:
+                found=find(g, rom)
+                if found: break
+            if not found:
+                for b in [os.path.join(dp,'roms'), os.path.join(root,'roms'), os.path.join(root,'pinmame','roms'), '/userdata/system/configs/vpinball/pinmame/roms']:
+                    wrong=find(b, rom)
+                    if wrong: break
+            z=found or wrong
+            if z:
+                try: crcs=[i.CRC for i in zipfile.ZipFile(z).infolist()]
+                except Exception: crcs=[]
+        out.append({"table":rel,"rom":rom,"zip":found,"wrong":wrong,"dst":os.path.join(dp,'pinmame','roms'),"crcs":crcs})
+print(json.dumps({"glob":glob,"tables":out}))`
 
 func (s *Server) diagVpinball() (any, error) {
 	j := s.jobs.Start("Controllo tavoli Visual Pinball", func(j *jobs.Job) (any, error) {
@@ -627,13 +658,17 @@ func (s *Server) diagVpinball() (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		var tables []struct {
-			Table, Rom, Zip string
-			Crcs            []float64
+		var scan struct {
+			Glob   string
+			Tables []struct {
+				Table, Rom, Zip, Wrong, Dst string
+				Crcs                        []float64
+			}
 		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(lastLine(res.Stdout))), &tables); err != nil {
+		if err := json.Unmarshal([]byte(strings.TrimSpace(lastLine(res.Stdout))), &scan); err != nil {
 			return nil, fmt.Errorf("lettura tavoli: %v %s", err, res.Stderr)
 		}
+		tables := scan.Tables
 		db, _ := s.dats.Load("mame")
 		type row struct {
 			File     string            `json:"file"`
@@ -643,6 +678,8 @@ func (s *Server) diagVpinball() (any, error) {
 			Best     string            `json:"best"`
 			Cores    map[string]string `json:"cores"`
 			Note     string            `json:"note"`
+			Src      string            `json:"src,omitempty"`
+			Dst      string            `json:"dst,omitempty"`
 		}
 		var rows []row
 		counts := map[string]int{}
@@ -651,8 +688,13 @@ func (s *Server) diagVpinball() (any, error) {
 			switch {
 			case t.Rom == "":
 				rw.Status, rw.Note = "ok", "tavolo senza ROM PinMAME (o script non leggibile)"
+			case t.Zip == "" && t.Wrong != "":
+				rw.Status = "wrong_place"
+				rw.Src, rw.Dst = t.Wrong, t.Dst
+				rw.Best = strings.TrimPrefix(t.Dst, "/userdata/roms/vpinball/")
+				rw.Note = "ROM " + t.Rom + ".zip in " + strings.TrimPrefix(t.Wrong, "/userdata/roms/vpinball/") + ": Visual Pinball di Batocera 43 la cerca in <tavolo>/pinmame/roms/ (non più in roms/), quindi il flipper parte senza ROM"
 			case t.Zip == "":
-				rw.Status, rw.Note = "incomplete", "manca la ROM PinMAME "+t.Rom+".zip (cercata in roms/ accanto al tavolo, vpinball/roms/ e pinmame/roms/)"
+				rw.Status, rw.Note = "incomplete", "manca la ROM PinMAME "+t.Rom+".zip (cercata in pinmame/roms/ accanto al tavolo e nella cartella PinMAME comune): caricala con Aggiungi ROM"
 			default:
 				rw.Note = "ROM " + t.Rom + ".zip in " + strings.TrimPrefix(t.Zip, "/userdata/roms/vpinball/")
 				if db != nil && db.Games[t.Rom] != nil {
@@ -676,7 +718,12 @@ func (s *Server) diagVpinball() (any, error) {
 			counts[rw.Status]++
 			rows = append(rows, rw)
 		}
-		return map[string]any{"system": "vpinball", "rows": rows, "counts": counts, "sys_core": "vpinball"}, nil
+		note := ""
+		if scan.Glob == "" || scan.Glob == "./" || scan.Glob == "." {
+			note = "VPinballX.ini non ha una cartella PinMAME comune: \"Applica\" imposta PinMAMEPath = " + vpxPinmameRoot + " (le ROM in vpinball/pinmame/roms/ valgono per tutti i tavoli)"
+			counts["ini"] = 1
+		}
+		return map[string]any{"system": "vpinball", "rows": rows, "counts": counts, "sys_core": "vpinball", "note": note}, nil
 	})
 	return map[string]any{"job": j.ID}, nil
 }
