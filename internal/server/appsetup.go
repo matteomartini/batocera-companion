@@ -199,11 +199,43 @@ export QT_QPA_PLATFORM=xcb
 app_dir="/userdata/system/add-ons/chiaki"
 log="/userdata/system/logs/chiaki.log"
 mkdir -p /userdata/system/logs
-# gia' aperto? non ne lancio un secondo
-if pgrep -f 'Chiaki.AppImage' >/dev/null; then echo "$(date): Chiaki gia' in esecuzione" >> "$log"; exit 0; fi
+# un Chiaki rimasto appeso (sessione bloccata) impedirebbe l'avvio: lo chiudo prima di ripartire
+if pgrep -f 'Chiaki.AppImage' >/dev/null; then echo "$(date): chiudo un Chiaki rimasto in esecuzione" >> "$log"; pkill -9 -f 'Chiaki.AppImage'; sleep 1; fi
+# cabinato: il joystick (digitale) fa anche da levetta sinistra, cosi' nei giochi PS5 il personaggio si muove
+if [ -n "$SDL_GAMECONTROLLERCONFIG" ] && [ -f "$app_dir/padmap.py" ]; then
+  m="$(printf '%s' "$SDL_GAMECONTROLLERCONFIG" | python3 "$app_dir/padmap.py" 2>>"$log")"
+  [ -n "$m" ] && export SDL_GAMECONTROLLERCONFIG="$m"
+fi
 echo "$(date): avvio Chiaki" >> "$log"
 cd "$app_dir" && ./Chiaki.AppImage >> "$log" 2>&1
 `
+	// mappatura SDL: se il pad non ha una levetta sinistra, la ricava dal d-pad (assi o hat del joystick)
+	padmap := `import sys, re
+out = []
+for line in sys.stdin.read().splitlines():
+    if not line.strip():
+        continue
+    parts = line.split(',')
+    keys = {p.split(':')[0]: p.split(':', 1)[1] for p in parts[2:] if ':' in p}
+    add = []
+    if 'leftx' not in keys:
+        v = keys.get('dpleft', '')
+        m = re.match(r'[-+]a(\d+)', v)
+        if m: add.append('leftx:a' + m.group(1))
+        elif v.startswith('h'): add.append('leftx:' + v.split('.')[0] + '.8')  # hat → non supportato come asse: lascia
+    if 'lefty' not in keys:
+        v = keys.get('dpup', '')
+        m = re.match(r'[-+]a(\d+)', v)
+        if m: add.append('lefty:a' + m.group(1))
+    add = [a for a in add if not a.endswith('.8')]
+    if add:
+        line = line.rstrip(',') + ',' + ','.join(add) + ','
+    out.append(line)
+print('\n'.join(out))
+`
+	if err := s.ssh.UploadBytes("/userdata/system/add-ons/chiaki/padmap.py", []byte(padmap), 0o644); err != nil {
+		return err
+	}
 	if err := s.ssh.UploadBytes("/userdata/roms/ports/Chiaki.sh", []byte(launcher), 0o755); err != nil {
 		return err
 	}

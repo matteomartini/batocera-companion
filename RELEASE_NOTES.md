@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.2
+- **Chiaki (PS5 Remote Play)**: il launcher in Ports chiude da solo un Chiaki rimasto appeso (prima, trovandolo, usciva subito e sembrava un crash all'avvio) e mappa il joystick del cabinato anche come **levetta sinistra**, così nei giochi PS5 il personaggio si muove (a scatti pieni: il joystick è digitale). L2/R2 arrivano dai tasti configurati come L2/R2 in EmulationStation. Per applicare: Add-on → Chiaki → Riconfigura.
+
 1.21.1
 - **Visual Pinball, ROM nel posto giusto**: Batocera 43 usa il PinMAME plugin di VPX, che cerca la ROM in `<cartella del tavolo>/pinmame/roms/` (non più in `roms/`): con il vecchio layout il tavolo partiva senza ROM (niente start, moneta, flipper). Aggiungi ROM ora mette le ROM PinMAME in `pinmame/roms/` e imposta in VPinballX.ini la cartella PinMAME comune `/userdata/roms/vpinball/pinmame` (le ROM lì valgono per tutti i tavoli). Giochi → vpinball → "Controlla tutti i set" trova le ROM nel posto sbagliato e "Applica" le sposta e sistema VPinballX.ini.
 
