@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.3
+- **Tasti per Chiaki**: in Add-on → Chiaki, "🎮 Tasti per Chiaki…" crea una mappatura usata solo da Chiaki (PS5 Remote Play), indipendente da EmulationStation. Il Companion prende gli encoder del cabinato e li presenta alla PS5 come un unico pad virtuale: ogni tasto può diventare ✕ ○ □ △ L1 R1 L2 R2 L3 R3 Create Options PS, e ogni joystick la croce, la levetta sinistra o la **levetta destra** (anche sul secondo encoder). Si assegna premendo il tasto sul cabinato.
+
 1.21.2
 - **Chiaki (PS5 Remote Play)**: il launcher in Ports chiude da solo un Chiaki rimasto appeso (prima, trovandolo, usciva subito e sembrava un crash all'avvio) e mappa il joystick del cabinato anche come **levetta sinistra**, così nei giochi PS5 il personaggio si muove (a scatti pieni: il joystick è digitale). L2/R2 arrivano dai tasti configurati come L2/R2 in EmulationStation. Per applicare: Add-on → Chiaki → Riconfigura.
 

@@ -186,7 +186,19 @@ func (s *Server) setupChiaki(j *jobs.Job) error {
 		j.Logf("✓ Chiaki installato")
 	}
 	j.SetProgress(0.6, "Rendo persistente la configurazione (registrazione PS5 in /userdata)")
-	launcher := `#!/bin/bash
+	if err := s.writeChiakiLauncher(); err != nil {
+		return err
+	}
+	if _, err := s.run(j, "mkdir -p /userdata/system/.config /userdata/system/.local/share /userdata/system/.cache; [ -d /root/.config/Chiaki ] && [ ! -d /userdata/system/.config/Chiaki ] && cp -r /root/.config/Chiaki /userdata/system/.config/; true", time.Minute); err != nil {
+		return err
+	}
+	j.Logf("✓ Chiaki.sh in Ports con configurazione persistente")
+	_ = s.es.ReloadGames()
+	j.Logf("Prima volta: avvia Chiaki dal cabinato, inserisci l'Account ID PSN (dal link 'Login PSN' nella scheda Add-on, poi incolla l'indirizzo in Chiaki con Ctrl+V dalla vista live) e registra la PS5 con il PIN.")
+	return nil
+}
+
+const chiakiLauncher = `#!/bin/bash
 export $(cat /proc/1/environ | tr '\0' '\n')
 # configurazione e registrazione PS5 su /userdata (persistente), non su / (si azzera a ogni riavvio)
 export HOME=/userdata/system
@@ -206,11 +218,27 @@ if [ -n "$SDL_GAMECONTROLLERCONFIG" ] && [ -f "$app_dir/padmap.py" ]; then
   m="$(printf '%s' "$SDL_GAMECONTROLLERCONFIG" | python3 "$app_dir/padmap.py" 2>>"$log")"
   [ -n "$m" ] && export SDL_GAMECONTROLLERCONFIG="$m"
 fi
+# mappatura tasti dedicata a Chiaki (pad virtuale del Companion): encoder presi in esclusiva
+padpid=""
+if [ -f /userdata/system/companion/chiaki-pad.json ] && [ -f "$app_dir/chiaki-pad.py" ]; then
+  rm -f /tmp/bc_chiaki_pad.map
+  python3 "$app_dir/chiaki-pad.py" & padpid=$!
+  for i in 1 2 3 4 5 6 7 8 9 10; do [ -f /tmp/bc_chiaki_pad.map ] && break; sleep 0.3; done
+  if [ -f /tmp/bc_chiaki_pad.map ]; then
+    export SDL_GAMECONTROLLERCONFIG="$(cat /tmp/bc_chiaki_pad.map)
+$SDL_GAMECONTROLLERCONFIG"
+    echo "$(date): pad virtuale Companion attivo" >> "$log"
+  else
+    echo "$(date): pad virtuale non partito, uso i controller normali" >> "$log"
+  fi
+fi
 echo "$(date): avvio Chiaki" >> "$log"
 cd "$app_dir" && ./Chiaki.AppImage >> "$log" 2>&1
+[ -n "$padpid" ] && kill "$padpid" 2>/dev/null
 `
-	// mappatura SDL: se il pad non ha una levetta sinistra, la ricava dal d-pad (assi o hat del joystick)
-	padmap := `import sys, re
+
+// mappatura SDL: se il pad non ha una levetta sinistra, la ricava dal d-pad (assi del joystick)
+const chiakiPadmap = `import sys, re
 out = []
 for line in sys.stdin.read().splitlines():
     if not line.strip():
@@ -233,17 +261,16 @@ for line in sys.stdin.read().splitlines():
     out.append(line)
 print('\n'.join(out))
 `
-	if err := s.ssh.UploadBytes("/userdata/system/add-ons/chiaki/padmap.py", []byte(padmap), 0o644); err != nil {
+
+// writeChiakiLauncher scrive Chiaki.sh in Ports e gli script di supporto (padmap, pad virtuale).
+func (s *Server) writeChiakiLauncher() error {
+	if err := s.ssh.UploadBytes("/userdata/system/add-ons/chiaki/padmap.py", []byte(chiakiPadmap), 0o644); err != nil {
 		return err
 	}
-	if err := s.ssh.UploadBytes("/userdata/roms/ports/Chiaki.sh", []byte(launcher), 0o755); err != nil {
-		return err
+	if b, err := s.asset("chiaki-pad.py"); err == nil {
+		if err := s.ssh.UploadBytes("/userdata/system/add-ons/chiaki/chiaki-pad.py", b, 0o755); err != nil {
+			return err
+		}
 	}
-	if _, err := s.run(j, "mkdir -p /userdata/system/.config /userdata/system/.local/share /userdata/system/.cache; [ -d /root/.config/Chiaki ] && [ ! -d /userdata/system/.config/Chiaki ] && cp -r /root/.config/Chiaki /userdata/system/.config/; true", time.Minute); err != nil {
-		return err
-	}
-	j.Logf("✓ Chiaki.sh in Ports con configurazione persistente")
-	_ = s.es.ReloadGames()
-	j.Logf("Prima volta: avvia Chiaki dal cabinato, inserisci l'Account ID PSN (dal link 'Login PSN' nella scheda Add-on, poi incolla l'indirizzo in Chiaki con Ctrl+V dalla vista live) e registra la PS5 con il PIN.")
-	return nil
+	return s.ssh.UploadBytes("/userdata/roms/ports/Chiaki.sh", []byte(chiakiLauncher), 0o755)
 }

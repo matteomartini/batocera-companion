@@ -980,7 +980,7 @@ async function asLoad() {
         <div class="a"><button class="btn sm primary" onclick="asRun('steam')">${st.configured ? '🔁 Riconfigura' : '⚙ Configura Steam'}</button></div></div></div>
       <div class="theme"><div class="b"><div class="n">Chiaki (PS5 Remote Play) ${ch.configured ? '<span class="tag ok">configurato</span>' : ''}</div>
         ${row(ch.installed, 'Chiaki installato (BUA)')}${row(ch.persistent, 'configurazione persistente ai riavvii')}${row(ch.registered, 'PS5 registrata' + (ch.hosts && ch.hosts.length ? ': ' + esc(ch.hosts.join(', ')) : ''))}
-        <div class="a"><button class="btn sm primary" onclick="asRun('chiaki')">${ch.configured ? '🔁 Riconfigura' : '⚙ Configura Chiaki'}</button><a class="btn sm ghost" href="#" onclick="openUrl('${psnUrl}');return false" title="Apre il login PSN nel browser del PC: dopo il login copia l'indirizzo della pagina e incollalo in Chiaki → PSN Login con Ctrl+V nella vista live">🔑 Login PSN (per l'Account ID)</a></div></div></div>`;
+        <div class="a"><button class="btn sm primary" onclick="asRun('chiaki')">${ch.configured ? '🔁 Riconfigura' : '⚙ Configura Chiaki'}</button><button class="btn sm" onclick="cpOpen()" title="Mappatura tasti usata solo da Chiaki: tasti degli encoder → ✕ ○ □ △ L1 R1 L2 R2 L3 R3, joystick → croce o levette">🎮 Tasti per Chiaki…</button><a class="btn sm ghost" href="#" onclick="openUrl('${psnUrl}');return false" title="Apre il login PSN nel browser del PC: dopo il login copia l'indirizzo della pagina e incollalo in Chiaki → PSN Login con Ctrl+V nella vista live">🔑 Login PSN (per l'Account ID)</a></div></div></div>`;
   } catch (e) { $('#as-list').innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
 }
 async function asRun(app) {
@@ -1584,3 +1584,66 @@ async function pfRun() {
   $('#pf-job').hidden = true; $('#pf-run').disabled = false; $('#pf-stop').hidden = true; pfJob = null;
 }
 async function pfStop() { if (pfJob) try { await api('job/cancel', {id: pfJob}); } catch (e) {} }
+
+
+// ---------- mappatura tasti per Chiaki (pad virtuale) ----------
+const CP_TARGETS = [
+  ['cross', '✕ Croce'], ['circle', '○ Cerchio'], ['square', '□ Quadrato'], ['triangle', '△ Triangolo'],
+  ['l1', 'L1'], ['r1', 'R1'], ['l2', 'L2 (grilletto)'], ['r2', 'R2 (grilletto)'], ['l3', 'L3 (clic levetta sx)'], ['r3', 'R3 (clic levetta dx)'],
+  ['create', 'Create / Share'], ['options', 'Options'], ['ps', 'PS (home)'],
+];
+const CP_STICKS = [['dpad', 'Croce direzionale'], ['lstick', 'Levetta sinistra'], ['rstick', 'Levetta destra']];
+let cp = {map: {}, devices: []};
+function cpDevLabel(phys) {
+  const i = cp.devices.findIndex(d => d.phys === phys);
+  return i >= 0 ? `encoder ${i + 1}` : (phys || '?');
+}
+function cpSrcLabel(key) {
+  if (!key) return '<span class="muted">—</span>';
+  const [phys, src] = key.split('|'); const [kind, code] = src.split(':');
+  return kind === 'a' ? `joystick (${cpDevLabel(phys)})` : `tasto ${code} (${cpDevLabel(phys)})`;
+}
+function cpKeyFor(target) { return Object.keys(cp.map).find(k => cp.map[k] === target) || ''; }
+function cpRender() {
+  const rows = t => t.map(([id, label]) => {
+    const key = cpKeyFor(id); const isStick = CP_STICKS.some(x => x[0] === id);
+    return `<tr><td><b>${label}</b></td><td id="cp-src-${id}">${cpSrcLabel(key)}</td><td style="white-space:nowrap">
+      <button class="btn sm" onclick="cpDetect('${id}', ${isStick})">${isStick ? '🕹 Muovi…' : '⏺ Premi…'}</button>
+      <button class="btn sm ghost" onclick="cpClear('${id}')" title="Togli">✕</button></td></tr>`;
+  }).join('');
+  $('#cp-table').innerHTML = `<tbody>${rows(CP_STICKS)}${rows(CP_TARGETS)}</tbody>`;
+  $('#cp-devs').textContent = cp.devices.length ? cp.devices.map((d, i) => `encoder ${i + 1}: ${d.name} (${d.phys})`).join(' · ') : 'nessun encoder trovato sul cabinato';
+}
+async function cpOpen() {
+  try { const r = await api('chiaki/pad'); cp = {map: r.map || {}, devices: r.devices || []}; }
+  catch (e) { return toast(e.message, 'err'); }
+  const html = `<h3>🎮 Tasti per Chiaki (PS5 Remote Play)</h3>
+    <p class="hint">Mappatura usata <b>solo da Chiaki</b>: non tocca EmulationStation né gli altri emulatori. Il Companion prende i tasti degli encoder e li presenta alla PS5 come un unico pad, quindi puoi usare anche il secondo encoder (per esempio un secondo joystick come <b>levetta destra</b>, o tasti laterali come L2/R2). Per ogni voce premi il pulsante e poi, entro 15 secondi, premi il tasto (o muovi il joystick) sul cabinato.</p>
+    <p class="muted" id="cp-devs"></p>
+    <table class="tbl" id="cp-table"></table>
+    <p class="hint">Il joystick è digitale: come levetta vale "tutto o niente" (personaggio sempre al massimo, sterzo a fondo). I tasti su L2/R2 danno il grilletto premuto a fondo.</p>
+    <div class="btns"><button class="btn ghost" onclick="cpRemove()">🗑 Rimuovi mappatura</button></div>`;
+  const pending = dlg(html, 'Salva'); // dlg scrive l'html e apre subito: il render va fatto ora
+  cpRender();
+  const ok = await pending;
+  if (!ok) return;
+  try { const r = await api('chiaki/pad/save', {map: cp.map}); toast(r.removed ? 'Mappatura rimossa' : `Mappatura salvata (${r.count} voci): vale dal prossimo avvio di Chiaki`, 'ok'); asLoad(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+async function cpDetect(target, isStick) {
+  const cell = $('#cp-src-' + target); cell.textContent = isStick ? 'muovi ora il joystick… (15 s)' : 'premi ora il tasto… (15 s)';
+  try {
+    const r = await api('chiaki/pad/detect', {kind: isStick ? 'axis' : 'button'});
+    const key = `${r.phys}|${r.kind}:${r.code}`;
+    Object.keys(cp.map).forEach(k => { if (cp.map[k] === target || k === key) delete cp.map[k]; });
+    cp.map[key] = target;
+    if (!cp.devices.some(d => d.phys === r.phys)) cp.devices.push({phys: r.phys, name: r.name, device: r.device});
+    cpRender(); toast('Rilevato', 'ok');
+  } catch (e) { cpRender(); toast(e.message, 'err'); }
+}
+function cpClear(target) { Object.keys(cp.map).forEach(k => { if (cp.map[k] === target) delete cp.map[k]; }); cpRender(); }
+async function cpRemove() {
+  cp.map = {}; dlgClose(false);
+  try { await api('chiaki/pad/save', {map: {}}); toast('Mappatura rimossa: Chiaki usa i controller come configurati in EmulationStation', 'ok'); asLoad(); }
+  catch (e) { toast(e.message, 'err'); }
+}
