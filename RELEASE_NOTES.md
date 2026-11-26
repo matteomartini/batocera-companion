@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.22.1
+- **Plancia**: sotto ogni pulsante i nomi come li chiede EmulationStation quando configuri il controller: A · SUD, B · EST, X · NORD, Y · OVEST, L1, R1, L2, R2.
+
 1.22.0
 - **Alimentazione**: nuova card in Dashboard per l'interruttore Zigbee del cabinato (Sonoff su Zigbee2MQTT) tramite il broker MQTT di Home Assistant: stato della corrente, "Accendi", "Togli corrente" e "Spegni e togli corrente" (poweroff pulito di Batocera, attesa che sia giù, poi relè OFF). Nella scheda Add-on → Home Assistant si indica il topic del dispositivo (es. `zigbee2mqtt/Cabinato`) e con "Salva per l'alimentazione" i dati del broker restano sul PC senza reinstallare l'agente.
 

@@ -1370,7 +1370,8 @@ try {
 
 
 // ---------- PLANCIA ----------
-const ES_LABEL = {a: 'A', b: 'B', x: 'X', y: 'Y', pageup: 'L', pagedown: 'R', select: 'SELECT', start: 'START', hotkey: 'HOTKEY', 'select+hotkey': 'SELECT · HOTKEY', 'start+hotkey': 'START · HOTKEY'};
+// nomi come li chiama EmulationStation nella configurazione del controller (A=SUD, B=EST, X=NORD, Y=OVEST)
+const ES_LABEL = {a: 'A · SUD', b: 'B · EST', x: 'X · NORD', y: 'Y · OVEST', pageup: 'L1', pagedown: 'R1', l2: 'L2', r2: 'R2', l3: 'L3', r3: 'R3', select: 'SELECT', start: 'START', hotkey: 'HOTKEY', 'select+hotkey': 'SELECT · HOTKEY', 'start+hotkey': 'START · HOTKEY'};
 var plES = null, plData = null, plEdit = false, plTested = new Set();
 async function plStart() {
   if (plES) return;
