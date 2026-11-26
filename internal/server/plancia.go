@@ -70,9 +70,16 @@ while True:
     if not fds: break
 `
 
-// planciaESMap: per nome dispositivo, "button:<id>" / "hat:<id>:<v>" / "axis:<id>:<v>" → nome ES.
-func (s *Server) planciaESMap() map[string]map[string]string {
-	out := map[string]map[string]string{}
+// planciaESMap: configurazioni joystick di EmulationStation, con nome, GUID e "button:<id>" → ruolo.
+type planciaES struct {
+	Name   string            `json:"name"`
+	GUID   string            `json:"guid"`
+	VidPid string            `json:"vidpid"`
+	Map    map[string]string `json:"map"`
+}
+
+func (s *Server) planciaESMap() []planciaES {
+	var out []planciaES
 	res, err := s.ssh.RunTimeout("cat /userdata/system/configs/emulationstation/es_input.cfg 2>/dev/null", 20*time.Second)
 	if err != nil {
 		return out
@@ -88,12 +95,20 @@ func (s *Server) planciaESMap() map[string]map[string]string {
 					mp[v] = old + "+hotkey"
 				} else if old == "hotkey" {
 					mp[v] = name + "+hotkey"
+				} else if old == "l2" || old == "r2" || old == "l3" || old == "r3" {
+					mp[v] = name // il ruolo principale vince sui tasti secondari condivisi
 				}
 				continue
 			}
 			mp[v] = name
 		}
-		out[strings.TrimSpace(ic.DeviceName)] = mp
+		// GUID SDL: byte 8-9 vendor, 12-13 product (little endian) → "0079:0006"
+		vp := ""
+		g := strings.ToLower(strings.TrimSpace(ic.GUID))
+		if len(g) >= 28 {
+			vp = g[10:12] + g[8:10] + ":" + g[18:20] + g[16:18]
+		}
+		out = append(out, planciaES{Name: strings.TrimSpace(ic.DeviceName), GUID: g, VidPid: vp, Map: mp})
 	}
 	return out
 }

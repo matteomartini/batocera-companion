@@ -1407,7 +1407,10 @@ function plRender() {
   const html = devs.slice(0, 2).map((dev, i) => {
     const p = i;
     // mappa ES del dispositivo: "button:<idx>" → ruolo (a, b, x, y, pageup, pagedown, select, start, hotkey, l2, r2…)
-    const m = (d.es || {})[dev.name] || Object.values(d.es || {})[0] || {};
+    const norm = x => String(x || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const esList = Array.isArray(d.es) ? d.es : [];
+    const esCfg = esList.find(c => norm(c.name) === norm(dev.name)) || esList.find(c => c.vidpid && dev.id && c.vidpid === String(dev.id).toLowerCase()) || esList[0] || null;
+    const m = esCfg ? esCfg.map : {};
     const roleOf = {}; Object.keys(m).forEach(k => { if (k.startsWith('button:')) roleOf[+k.slice(7)] = m[k]; });
     const idxOf = role => { const e = Object.entries(roleOf).find(([, r]) => r === role || r === role + '+hotkey' || r === 'hotkey+' + role); return e ? +e[0] : -1; };
     const lab = (role, idx) => d.labels[role] || d.labels[String(idx)] || d.defaults[role] || ('BTN ' + idx);
@@ -1422,7 +1425,8 @@ function plRender() {
     const sys = ['select', 'start', 'hotkey', 'l2', 'r2', 'l3', 'r3'].filter(r => idxOf(r) >= 0 && !(r === 'hotkey' && (roleOf[idxOf('select')] || '').includes('hotkey'))).map(r => btn(r)).join('')
       + extra.map(idx => `<div class="pl-btn" id="pl-p${p}-b${idx}" data-k="${idx}" onclick="plRename('${idx}')"><span class="ok">✓</span><span class="lab">${esc(d.labels[String(idx)] || ('BTN ' + idx))}</span><span class="es">${esc(roleOf[idx].toUpperCase())}</span></div>`).join('');
     const noEs = !Object.keys(roleOf).length;
-    return `<div class="pl-player"><h3>Giocatore ${p + 1} <span class="dev">${esc(dev.name)} ${esc(dev.event || '')}</span></h3>
+    const esInfo = esCfg ? `config ES: ${esc(esCfg.name)}${esCfg.vidpid ? ' (' + esc(esCfg.vidpid) + ')' : ''}` : 'nessuna config ES';
+    return `<div class="pl-player"><h3>Giocatore ${p + 1} <span class="dev">${esc(dev.name)} ${esc(dev.event || '')} · ${esInfo}</span></h3>
       ${noEs ? '<p class="hint">Controller non configurato in EmulationStation: la plancia non sa quale pulsante è quale. Configuralo da ES (Menu → Impostazioni controller) e ricarica.</p>' : ''}
       <div class="pl-row">
         <div class="pl-stick"><div></div><div class="d" id="pl-p${p}-up">▲</div><div></div><div class="d" id="pl-p${p}-left">◀</div><div class="c"></div><div class="d" id="pl-p${p}-right">▶</div><div></div><div class="d" id="pl-p${p}-down">▼</div><div></div></div>

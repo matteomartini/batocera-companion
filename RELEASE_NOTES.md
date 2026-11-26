@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.6
+- **Plancia**: la configurazione di EmulationStation viene abbinata all'encoder per nome (ignorando spazi e maiuscole) e, in mancanza, per vendor:product del GUID; prima, se il nome non coincideva alla lettera, la pagina usava la prima configurazione del file (magari di un altro pad) e L2/R2 e le altre scritte non tornavano. Nell'intestazione di ogni giocatore ora si legge quale configurazione ES è in uso. Se un tasto è condiviso tra un ruolo principale e L2/R2, vince il principale.
+
 1.21.5
 - **Plancia**: i pulsanti sono disposti secondo la configurazione del controller in EmulationStation (riga alta Y X L, riga bassa B A R, poi Select/Start/Hotkey/L2/R2…) invece che per numero di porta dell'encoder. Prima, cambiando porta o riconfigurando ES, le scritte restavano sulle vecchie posizioni e si illuminava il pulsante sbagliato. Le scritte personalizzate ora sono legate al ruolo (JAB = Y, ecc.); un pulsante non configurato in ES compare tratteggiato.
 
