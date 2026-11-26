@@ -27,6 +27,7 @@ import (
 )
 
 type Server struct {
+	power   powerCtl
 	Version string
 	cfg     *config.Config
 	ssh     *cab.SSH
@@ -213,6 +214,7 @@ func (s *Server) Handler(local bool) http.Handler {
 	api("ha", s.hHA)
 	api("ha/install", s.hHAInstall)
 	api("ha/remove", s.hHARemove)
+	api("power", s.hPower)
 	api("volbtn", s.hVolbtn)
 	api("volbtn/detect", s.hVolbtnDetect)
 	api("volbtn/install", s.hVolbtnInstall)

@@ -61,6 +61,17 @@
         <div class="btns" style="margin-top:8px"><button class="btn" onclick="upLoad(true)">🔄 Controlla ora</button></div>
         <div id="up-job" hidden><div class="jobline"><span id="up-step"></span></div><div class="bar big"><i id="up-bar"></i></div><pre class="log" id="up-log"></pre></div>
       </div>
+      <div class="card" id="pw-card" hidden>
+        <h2>Alimentazione <span class="hint" id="pw-state">…</span></h2>
+        <div class="hint">Interruttore Zigbee del cabinato (Sonoff su Zigbee2MQTT) tramite il broker MQTT di Home Assistant. "Spegni e togli corrente" fa prima lo spegnimento pulito di Batocera, aspetta che il cabinato sia giù e poi stacca il relè.</div>
+        <div class="btns" style="margin-top:8px">
+          <button class="btn primary" onclick="pwAct('on')">⚡ Accendi</button>
+          <button class="btn danger" onclick="pwConfirm('shutdown','Spegnere Batocera e poi togliere corrente al cabinato?')">⏻ Spegni e togli corrente</button>
+          <button class="btn warn" onclick="pwConfirm('off','Togliere corrente subito, senza spegnere Batocera? (come staccare la spina)')">🔌 Togli corrente</button>
+          <button class="btn ghost sm" onclick="pwLoad()">🔄</button>
+        </div>
+        <div class="hint" id="pw-busy" hidden></div>
+      </div>
       <div class="card">
         <h2>Comandi rapidi</h2>
         <div class="btns">
@@ -576,11 +587,13 @@
           <label>Porta<input id="ha-port" class="in" type="number" value="1883"></label>
           <label>Utente MQTT<input id="ha-user" class="in" placeholder="mqtt_user"></label>
           <label>Password MQTT<input id="ha-pass" class="in" type="password"></label>
+          <label>Interruttore Zigbee del cabinato (topic Zigbee2MQTT)<input id="ha-power" class="in" placeholder="zigbee2mqtt/Cabinato"></label>
           <label>Nome del dispositivo in HA<input id="ha-name" class="in" value="Cabinato Arcade1Up"></label>
           <label>ID (lettere/numeri)<input id="ha-id" class="in" value="cabinato"></label>
         </div>
         <div class="btns" style="margin-top:8px">
           <button class="btn primary" onclick="haInstall()">🏠 Installa / aggiorna sul cabinato</button>
+          <button class="btn" onclick="pwSaveCfg()" title="Salva broker e interruttore solo sul PC, per la card Alimentazione della Dashboard (senza toccare l'agente sul cabinato)">🔌 Salva per l'alimentazione</button>
           <button class="btn ghost" onclick="haRemove()">🗑 Rimuovi</button>
           <button class="btn ghost" onclick="haLoad()">Aggiorna stato</button>
         </div>

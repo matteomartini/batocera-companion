@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"batocompanion/internal/cab"
+	"batocompanion/internal/config"
 	"batocompanion/internal/jobs"
 )
 
@@ -70,6 +71,9 @@ func (s *Server) hHAInstall(w http.ResponseWriter, r *http.Request) (any, error)
 	if err != nil {
 		return nil, err
 	}
+	// i dati del broker servono anche al Companion (interruttore Zigbee del cabinato)
+	s.cfg.MQTTHost, s.cfg.MQTTPort, s.cfg.MQTTUser, s.cfg.MQTTPass = req.Host, req.Port, req.User, req.Password
+	_ = config.Save(s.cfg)
 	j := s.jobs.Start("Agente Home Assistant", func(j *jobs.Job) (any, error) {
 		j.SetProgress(0.1, "Verifico il broker MQTT dal cabinato")
 		res, err := s.ssh.RunTimeout(fmt.Sprintf("which mosquitto_pub >/dev/null || { echo NOMOSQ; exit 0; }; timeout 10 mosquitto_pub -h %s -p %d -u %s -P %s -t %s/companion_test -m ok 2>&1 && echo MQTTOK", cab.ShellQuote(req.Host), req.Port, cab.ShellQuote(req.User), cab.ShellQuote(req.Password), req.DeviceID), 30*time.Second)

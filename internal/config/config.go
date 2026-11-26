@@ -34,6 +34,13 @@ type Config struct {
 	SSRegion  string `json:"ss_region"`
 	SSLang    string `json:"ss_lang"`
 
+	// Broker MQTT di Home Assistant (salvato con l'agente HA) e interruttore Zigbee del cabinato
+	MQTTHost   string `json:"mqtt_host"`
+	MQTTPort   int    `json:"mqtt_port"`
+	MQTTUser   string `json:"mqtt_user"`
+	MQTTPass   string `json:"mqtt_pass"`
+	PowerTopic string `json:"power_topic"` // topic Zigbee2MQTT del dispositivo, es. zigbee2mqtt/Cabinato
+
 	// Plancia
 	PlanciaLabels map[string]string `json:"plancia_labels"`
 	PlanciaSwap   bool              `json:"plancia_swap"`

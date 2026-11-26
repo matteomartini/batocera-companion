@@ -58,7 +58,9 @@ setInterval(() => fetch('/api/ping').catch(() => {}), 2000);
 fetch('/api/ping').then(r => r.json()).then(j => $('#ver').textContent = 'v' + j.version).catch(() => {});
 
 let cfg = null;
+let pwLast = 0;
 async function refreshStatus() {
+  if (Date.now() - pwLast > 30000) { pwLast = Date.now(); pwLoad(); }
   try {
     const s = await api('status');
     $('#dash-host').textContent = s.host + (s.hostname ? '  ·  ' + s.hostname : '') + (s.ips && s.ips.length ? '  ·  ' + s.ips.join(', ') : '');
@@ -1346,7 +1348,8 @@ async function haInstall() {
   if (!body.host) return toast('Inserisci l\'IP del broker MQTT (Home Assistant)', 'err');
   if (!body.password && !await dlg('<p>Password MQTT vuota: procedo solo se il broker accetta connessioni anonime.</p>', 'Procedi')) return;
   $('#ha-job').hidden = false; $('#ha-log').textContent = '';
-  try { const r = await api('ha/install', body); await pollJob(r.job, bindJobUI('ha')); toast('Agente Home Assistant installato', 'ok'); $('#ha-pass').value = ''; }
+  const ptopic = $('#ha-power') ? $('#ha-power').value.trim() : '';
+  try { const r = await api('ha/install', body); await pollJob(r.job, bindJobUI('ha')); toast('Agente Home Assistant installato', 'ok'); $('#ha-pass').value = ''; if (ptopic) await api('power', {action: 'config', topic: ptopic}); pwLoad(); }
   catch (e) { await dlg(`<p>Installazione fallita:</p><pre class="log">${esc(e.message)}</pre>`, 'OK'); }
   haLoad();
 }
@@ -1665,4 +1668,34 @@ async function cpRemove() {
   cp.map = {}; dlgClose(false);
   try { await api('chiaki/pad/save', {map: {}}); toast('Mappatura rimossa: Chiaki usa i controller come configurati in EmulationStation', 'ok'); asLoad(); }
   catch (e) { toast(e.message, 'err'); }
+}
+
+
+// ---------- alimentazione (interruttore Zigbee via MQTT) ----------
+let pwTimer = null;
+async function pwLoad() {
+  const card = $('#pw-card'); if (!card) return;
+  let p;
+  try { p = await api('power'); } catch (e) { card.hidden = true; return; }
+  if ($('#ha-power') && !$('#ha-power').value) $('#ha-power').value = p.topic || '';
+  if (!p.configured) { card.hidden = true; return; }
+  card.hidden = false;
+  const st = $('#pw-state');
+  if (p.error) st.innerHTML = `<span class="tag err">broker non raggiungibile</span> ${esc(p.error)}`;
+  else if (p.state === 'ON') st.innerHTML = `<span class="tag ok">corrente ON</span> ${p.online ? 'cabinato acceso' : 'cabinato in avvio o spento'}`;
+  else if (p.state === 'OFF') st.innerHTML = `<span class="tag err">corrente OFF</span>`;
+  else st.innerHTML = `<span class="tag">stato sconosciuto</span> (${esc(p.topic)} non risponde: controlla il nome del dispositivo in Zigbee2MQTT)`;
+  const b = $('#pw-busy'); b.hidden = !p.busy; b.textContent = p.busy ? '⏳ ' + p.busy + '…' : '';
+  if (p.busy && !pwTimer) pwTimer = setInterval(async () => { const q = await api('power').catch(() => null); if (!q || !q.busy) { clearInterval(pwTimer); pwTimer = null; pwLoad(); refreshStatus(); } else { $('#pw-busy').textContent = '⏳ ' + q.busy + '…'; } }, 4000);
+}
+async function pwAct(action) {
+  try { await api('power', {action}); toast(action === 'on' ? 'Corrente data al cabinato: si accende' : action === 'off' ? 'Corrente tolta' : 'Spegnimento avviato: tolgo corrente appena Batocera è giù', 'ok'); setTimeout(pwLoad, 800); }
+  catch (e) { toast(e.message, 'err'); }
+}
+async function pwConfirm(action, msg) { if (await dlg(`<p>${esc(msg)}</p>`, 'Sì')) pwAct(action); }
+
+async function pwSaveCfg() {
+  const body = {action: 'config', host: $('#ha-host').value.trim(), port: +$('#ha-port').value || 1883, user: $('#ha-user').value.trim(), pass: $('#ha-pass').value, topic: $('#ha-power').value.trim() || 'zigbee2mqtt/Cabinato'};
+  if (!body.host) return toast('Inserisci l\'IP del broker MQTT', 'err');
+  try { await api('power', body); toast('Salvato: la card Alimentazione è nella Dashboard', 'ok'); $('#ha-pass').value = ''; pwLoad(); } catch (e) { toast(e.message, 'err'); }
 }
