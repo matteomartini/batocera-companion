@@ -15,9 +15,11 @@ import (
 
 // Pagina "Plancia": comandi fisici con le scritte della plancia, illuminati in tempo reale.
 
+// Le scritte sono per ruolo di EmulationStation (y x pageup / b a pagedown ...): così la plancia
+// segue la configurazione del controller, qualunque porta dell'encoder usi ogni pulsante.
 var planciaDefaultLabels = map[string]string{
-	"0": "JAB", "1": "STRONG", "2": "FIERCE", "3": "SHORT", "4": "FORWARD", "5": "ROUNDHOUSE",
-	"8": "SELECT", "9": "START",
+	"y": "JAB", "x": "STRONG", "pageup": "FIERCE", "b": "SHORT", "a": "FORWARD", "pagedown": "ROUNDHOUSE",
+	"select": "SELECT", "start": "START", "hotkey": "HOTKEY", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3",
 }
 
 // Lettore eventi evdev in python puro: calcola l'indice SDL dei pulsanti enumerando i bit EV_KEY
@@ -108,7 +110,7 @@ func (s *Server) hPlancia(w http.ResponseWriter, r *http.Request) (any, error) {
 		if req.Labels != nil {
 			clean := map[string]string{}
 			for k, v := range req.Labels {
-				if _, err := strconv.Atoi(k); err == nil && strings.TrimSpace(v) != "" {
+				if planciaLabelKey(k) && strings.TrimSpace(v) != "" {
 					clean[k] = strings.TrimSpace(v)
 				}
 			}
@@ -178,4 +180,17 @@ func (s *Server) hPlanciaEvents(w http.ResponseWriter, r *http.Request) {
 		default:
 		}
 	}
+}
+
+// planciaLabelKey: ruolo ES (lettere) oppure, per i pulsanti non configurati in ES, l'indice.
+func planciaLabelKey(k string) bool {
+	if _, err := strconv.Atoi(k); err == nil {
+		return true
+	}
+	for _, r := range k {
+		if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '+' {
+			return false
+		}
+	}
+	return k != ""
 }

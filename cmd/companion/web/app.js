@@ -1403,17 +1403,32 @@ function plLight(p, id, on) {
 }
 function plRender() {
   const d = plData, board = $('#pl-board'); if (!d) return;
-  const esFor = (dev, idx) => { const m = (d.es || {})[dev.name] || Object.values(d.es || {})[0] || {}; return m['button:' + idx] || ''; };
   const devs = d.devices && d.devices.length ? d.devices : [{name: 'nessun joystick', event: ''}];
   const html = devs.slice(0, 2).map((dev, i) => {
-    const p = i, lab = k => d.labels[k] || ('BTN ' + k);
-    const btn = (k, cls) => `<div class="pl-btn ${cls || ''}" id="pl-p${p}-b${k}" data-k="${k}" onclick="plRename(${k})"><span class="ok">✓</span><span class="lab">${esc(lab(k))}</span><span class="es">${esc(ES_LABEL[esFor(dev, k)] || esFor(dev, k) || '')}</span></div>`;
+    const p = i;
+    // mappa ES del dispositivo: "button:<idx>" → ruolo (a, b, x, y, pageup, pagedown, select, start, hotkey, l2, r2…)
+    const m = (d.es || {})[dev.name] || Object.values(d.es || {})[0] || {};
+    const roleOf = {}; Object.keys(m).forEach(k => { if (k.startsWith('button:')) roleOf[+k.slice(7)] = m[k]; });
+    const idxOf = role => { const e = Object.entries(roleOf).find(([, r]) => r === role || r === role + '+hotkey' || r === 'hotkey+' + role); return e ? +e[0] : -1; };
+    const lab = (role, idx) => d.labels[role] || d.labels[String(idx)] || d.defaults[role] || ('BTN ' + idx);
+    const used = new Set();
+    const btn = (role, cls) => {
+      const idx = idxOf(role); if (idx < 0) return `<div class="pl-btn missing ${cls || ''}" title="non configurato in EmulationStation"><span class="lab">${esc(d.defaults[role] || role)}</span><span class="es">—</span></div>`;
+      used.add(idx); const r = roleOf[idx] || role;
+      return `<div class="pl-btn ${cls || ''}" id="pl-p${p}-b${idx}" data-k="${role}" onclick="plRename('${role}')"><span class="ok">✓</span><span class="lab">${esc(lab(role, idx))}</span><span class="es">${esc(ES_LABEL[r] || r.toUpperCase())}</span></div>`;
+    };
+    const extra = Object.keys(roleOf).map(Number).filter(idx => !used.has(idx) && !['y', 'x', 'pageup', 'b', 'a', 'pagedown', 'select', 'start', 'hotkey', 'l2', 'r2', 'l3', 'r3'].some(r => roleOf[idx] === r || roleOf[idx] === r + '+hotkey'));
+    const top = btn('y') + btn('x') + btn('pageup'), bottom = btn('b') + btn('a') + btn('pagedown');
+    const sys = ['select', 'start', 'hotkey', 'l2', 'r2', 'l3', 'r3'].filter(r => idxOf(r) >= 0 && !(r === 'hotkey' && (roleOf[idxOf('select')] || '').includes('hotkey'))).map(r => btn(r)).join('')
+      + extra.map(idx => `<div class="pl-btn" id="pl-p${p}-b${idx}" data-k="${idx}" onclick="plRename('${idx}')"><span class="ok">✓</span><span class="lab">${esc(d.labels[String(idx)] || ('BTN ' + idx))}</span><span class="es">${esc(roleOf[idx].toUpperCase())}</span></div>`).join('');
+    const noEs = !Object.keys(roleOf).length;
     return `<div class="pl-player"><h3>Giocatore ${p + 1} <span class="dev">${esc(dev.name)} ${esc(dev.event || '')}</span></h3>
+      ${noEs ? '<p class="hint">Controller non configurato in EmulationStation: la plancia non sa quale pulsante è quale. Configuralo da ES (Menu → Impostazioni controller) e ricarica.</p>' : ''}
       <div class="pl-row">
         <div class="pl-stick"><div></div><div class="d" id="pl-p${p}-up">▲</div><div></div><div class="d" id="pl-p${p}-left">◀</div><div class="c"></div><div class="d" id="pl-p${p}-right">▶</div><div></div><div class="d" id="pl-p${p}-down">▼</div><div></div></div>
-        <div class="pl-btns">${btn(0)}${btn(1)}${btn(2)}${btn(3)}${btn(4)}${btn(5)}</div>
+        <div class="pl-btns">${top}${bottom}</div>
       </div>
-      <div class="pl-sys">${btn(8)}${btn(9)}${[6, 7, 10, 11].filter(k => d.labels[String(k)]).map(k => btn(k)).join('')}</div>
+      <div class="pl-sys">${sys}</div>
     </div>`;
   }).join('');
   board.innerHTML = html;
@@ -1423,7 +1438,7 @@ function plEditToggle() { plEdit = !plEdit; $('#pl-board').classList.toggle('edi
 async function plRename(k) {
   if (!plEdit) return;
   const cur = plData.labels[String(k)] || '';
-  const v = prompt('Scritta sulla plancia per il pulsante ' + k + ':', cur); if (v === null) return;
+  const v = prompt('Scritta sulla plancia per il pulsante ' + (ES_LABEL[k] || k) + ':', cur); if (v === null) return;
   const labels = Object.assign({}, plData.labels);
   if (v.trim()) labels[String(k)] = v.trim(); else { delete labels[String(k)]; if (plData.defaults[String(k)]) labels[String(k)] = plData.defaults[String(k)]; }
   try { await api('plancia', {labels}); plData.labels = labels; plRender(); toast('Salvato', 'ok'); } catch (e) { toast(e.message, 'err'); }

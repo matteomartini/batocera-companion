@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.5
+- **Plancia**: i pulsanti sono disposti secondo la configurazione del controller in EmulationStation (riga alta Y X L, riga bassa B A R, poi Select/Start/Hotkey/L2/R2…) invece che per numero di porta dell'encoder. Prima, cambiando porta o riconfigurando ES, le scritte restavano sulle vecchie posizioni e si illuminava il pulsante sbagliato. Le scritte personalizzate ora sono legate al ruolo (JAB = Y, ecc.); un pulsante non configurato in ES compare tratteggiato.
+
 1.21.4
 - **Tasti per Chiaki, correzione**: il pad virtuale ora rilascia gli encoder appena Chiaki si chiude in qualsiasi modo (hotkey, crash, chiusura dall'esterno). Prima, se Chiaki usciva senza passare dal launcher, il pad restava attivo e gli encoder prigionieri: in EmulationStation i tasti risultavano tutti sballati finché non si riavviava.
 
