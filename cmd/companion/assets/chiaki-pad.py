@@ -93,6 +93,9 @@ def main():
             x = code & ~1
             amap[(ph, x)] = (target, 0); amap[(ph, x + 1)] = (target, 1)
     def stop(*_):
+        for fd in devs:
+            try: fcntl.ioctl(fd, EVIOCGRAB, 0)
+            except Exception: pass
         try: fcntl.ioctl(ui, UI_DEV_DESTROY)
         except Exception: pass
         try: os.remove(MAPFILE)
@@ -100,7 +103,23 @@ def main():
         sys.exit(0)
     signal.signal(signal.SIGTERM, stop); signal.signal(signal.SIGINT, stop)
     fmt = 'llHHi'; sz = struct.calcsize(fmt)
+    # sentinella: se Chiaki non c'e' piu' (chiuso dall'hotkey o crashato) rilascio subito gli encoder,
+    # altrimenti EmulationStation resterebbe senza tasti
+    started = time.time(); lastchk = 0
+    def chiaki_alive():
+        for pid in os.listdir('/proc'):
+            if not pid.isdigit(): continue
+            try:
+                with open('/proc/%s/cmdline' % pid, 'rb') as f:
+                    if b'Chiaki' in f.read(): return True
+            except Exception: pass
+        return False
     while True:
+        now = time.time()
+        if now - lastchk > 2:
+            lastchk = now
+            if now - started > 20 and not chiaki_alive():
+                log('Chiaki chiuso: rilascio gli encoder'); stop()
         r, _, _ = select.select(list(devs), [], [], 1.0)
         for fd in r:
             try: data = os.read(fd, sz * 64)

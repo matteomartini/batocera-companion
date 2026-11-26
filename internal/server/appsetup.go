@@ -222,7 +222,9 @@ fi
 padpid=""
 if [ -f /userdata/system/companion/chiaki-pad.json ] && [ -f "$app_dir/chiaki-pad.py" ]; then
   rm -f /tmp/bc_chiaki_pad.map
+  pkill -f '[c]hiaki-pad.py' 2>/dev/null
   python3 "$app_dir/chiaki-pad.py" & padpid=$!
+  trap '[ -n "$padpid" ] && kill "$padpid" 2>/dev/null' EXIT INT TERM HUP
   for i in 1 2 3 4 5 6 7 8 9 10; do [ -f /tmp/bc_chiaki_pad.map ] && break; sleep 0.3; done
   if [ -f /tmp/bc_chiaki_pad.map ]; then
     export SDL_GAMECONTROLLERCONFIG="$(cat /tmp/bc_chiaki_pad.map)

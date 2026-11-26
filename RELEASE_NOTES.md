@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.21.4
+- **Tasti per Chiaki, correzione**: il pad virtuale ora rilascia gli encoder appena Chiaki si chiude in qualsiasi modo (hotkey, crash, chiusura dall'esterno). Prima, se Chiaki usciva senza passare dal launcher, il pad restava attivo e gli encoder prigionieri: in EmulationStation i tasti risultavano tutti sballati finché non si riavviava.
+
 1.21.3
 - **Tasti per Chiaki**: in Add-on → Chiaki, "🎮 Tasti per Chiaki…" crea una mappatura usata solo da Chiaki (PS5 Remote Play), indipendente da EmulationStation. Il Companion prende gli encoder del cabinato e li presenta alla PS5 come un unico pad virtuale: ogni tasto può diventare ✕ ○ □ △ L1 R1 L2 R2 L3 R3 Create Options PS, e ogni joystick la croce, la levetta sinistra o la **levetta destra** (anche sul secondo encoder). Si assegna premendo il tasto sul cabinato.
 
