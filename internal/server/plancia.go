@@ -27,6 +27,7 @@ var planciaDefaultLabels = map[string]string{
 const planciaReader = `
 import os, sys, struct, select, glob, fcntl, array, subprocess
 EVIOCGBIT_KEY = 0x80000000 | ((96 & 0x3fff) << 16) | (ord('E') << 8) | (0x20 + 1)
+def EVIOCGABS(c): return 0x80184540 + c
 def keybits(fd):
     buf = array.array('B', [0]*96)
     try: fcntl.ioctl(fd, EVIOCGBIT_KEY, buf, True)
@@ -34,21 +35,32 @@ def keybits(fd):
     codes = [i for i in range(len(buf)*8) if buf[i//8] & (1 << (i % 8))]
     hi = [c for c in codes if c >= 0x120]; lo = [c for c in codes if c < 0x120]
     return hi + lo
+def rd(p):
+    try: return open(p).read().strip()
+    except Exception: return ''
 devs = []
 for e in sorted(glob.glob('/sys/class/input/event*'), key=lambda p: int(p.split('event')[-1])):
     n = os.path.basename(e)
     try: p = subprocess.run(['udevadm', 'info', '-q', 'property', '-p', e], capture_output=True, text=True, timeout=5).stdout
     except Exception: p = ''
     if 'ID_INPUT_JOYSTICK=1' not in p: continue
-    try: name = open(e + '/device/name').read().strip()
-    except Exception: name = n
+    name = rd(e + '/device/name') or n
+    if 'Companion' in name: continue
     try:
         fd = os.open('/dev/input/' + n, os.O_RDONLY | os.O_NONBLOCK)
     except OSError as ex:
         print('err|%s|%s' % (n, ex), flush=True); continue
     kb = keybits(fd)
-    devs.append((fd, n, name, {c: i for i, c in enumerate(kb)}))
-    print('dev|%d|%s|%s|%d' % (len(devs)-1, n, name, len(kb)), flush=True)
+    absinfo = {}
+    for code in range(0, 24):
+        try:
+            buf = bytearray(24); fcntl.ioctl(fd, EVIOCGABS(code), buf)
+            v, mn, mx = struct.unpack('<iii', bytes(buf[:12]))
+            if mx > mn: absinfo[code] = (mn, mx)
+        except Exception: pass
+    vidpid = (rd(e + '/device/id/vendor') + ':' + rd(e + '/device/id/product')).lower()
+    devs.append((fd, n, name, {c: i for i, c in enumerate(kb)}, absinfo))
+    print('dev|%d|%s|%s|%s|%s|%d' % (len(devs)-1, n, name.replace('|', ' '), rd(e + '/device/phys'), vidpid, len(kb)), flush=True)
 print('ready|%d' % len(devs), flush=True)
 if not devs: sys.exit(0)
 fds = {d[0]: d for d in devs}
@@ -61,12 +73,18 @@ while True:
         try: data = os.read(fd, SZ * 64)
         except OSError:
             print('gone|%s' % fds[fd][1], flush=True); del fds[fd]; continue
-        for i in range(0, len(data) - SZ + 1, SZ):
-            _, _, t, c, v = struct.unpack('llHHi', data[i:i+SZ])
+        d = fds[fd]; i = devs.index(d)
+        for k in range(0, len(data) - SZ + 1, SZ):
+            _, _, t, c, v = struct.unpack('llHHi', data[k:k+SZ])
             if t == 1:
-                print('b|%d|%d|%d' % (devs.index(fds[fd]), fds[fd][3].get(c, -1), v), flush=True)
+                print('b|%d|%d|%d|%d' % (i, d[3].get(c, -1), v, c), flush=True)
             elif t == 3:
-                print('a|%d|%d|%d' % (devs.index(fds[fd]), c, v), flush=True)
+                if 16 <= c <= 23:
+                    print('h|%d|%d|%d' % (i, c, v), flush=True)   # hat: -1/0/1
+                else:
+                    mn, mx = d[4].get(c, (0, 255)); mid = (mn + mx) / 2.0; span = (mx - mn) / 2.0 or 1
+                    nv = (v - mid) / span
+                    print('a|%d|%d|%d|%d' % (i, c, -1 if nv < -0.4 else (1 if nv > 0.4 else 0), v), flush=True)
     if not fds: break
 `
 

@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.23.5
+- **Plancia rifatta sul serio**: i pannelli vengono dagli stessi dispositivi che il lettore eventi sta ascoltando (niente più scambi tra giocatore 1 e 2), le direzioni della leva seguono la configurazione di EmulationStation (su/giù/sinistra/destra come li ha registrati ES, anche se la leva è cablata al contrario), ogni pulsante mostra il suo numero di tasto e i tasti che l'encoder ha ma ES non conosce compaiono come "libero · tasto N", così si vede cosa manda un tasto nuovo.
+
 1.23.4
 - Space Cadet: "Aggiorna gioco e comandi" funziona anche con il gioco aperto (prima: "Text file busy").
 
