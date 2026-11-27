@@ -1,5 +1,9 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.23.0
+- **Scraper manuale per nome**: nei dettagli di un gioco, "🔎 Cerca su ScreenScraper per nome…" cerca la scheda (su tutti i sistemi o solo quello corrente), tu scegli quella giusta e il Companion scarica copertina, schermata, logo, video, sfondo e descrizione. Serve per i Ports (Space Cadet Pinball, Chiaki, Steam…) e per tutto ciò che lo scraper automatico non riconosce dal file.
+- **Add-on → 3D Pinball - Space Cadet**: nuova scheda con "Aggiorna gioco e comandi": riscrive binario, launcher e comandi preimpostati senza toccare i file dati già sul cabinato (niente da ritrascinare).
+
 1.22.2
 - **Space Cadet Pinball con L2/R2**: Batocera passa L2/R2 come grilletti (assi) e il gioco ascolta solo i pulsanti, quindi non li vedeva. Il launcher ora li presenta come pulsanti e i default usano i tasti laterali per i flipper (sinistro: L2, Y, B; destro: R2, L1, R1). I default aggiornati vengono riapplicati al prossimo avvio; per installarli basta ritrascinare la cartella Pinball in Aggiungi ROM.
 

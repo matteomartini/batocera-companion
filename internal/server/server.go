@@ -166,6 +166,8 @@ func (s *Server) Handler(local bool) http.Handler {
 	api("games/trash", s.hGamesTrash)
 	api("games/meta", s.hGamesMeta)
 	api("games/scrape", s.hGamesScrape)
+	api("games/scrape/search", s.hGamesScrapeSearch)
+	api("games/scrape/apply", s.hGamesScrapeApply)
 	api("games/rename", s.hGamesRename)
 	api("games/multidisc", s.hGamesMultidisc)
 	api("games/mame-rebuild", s.hGamesMame)

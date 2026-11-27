@@ -321,3 +321,71 @@ func (c *SS) DownloadMedia(u string) ([]byte, string, error) {
 	}
 	return b, ct, nil
 }
+
+// SSHit: risultato della ricerca per nome.
+type SSHit struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	System string `json:"system"`
+	Year   string `json:"year"`
+}
+
+type ssSearchResp struct {
+	Response struct {
+		Jeux []struct {
+			ID      string   `json:"id"`
+			Noms    []ssText `json:"noms"`
+			Dates   []ssText `json:"dates"`
+			Systeme struct {
+				Text string `json:"text"`
+			} `json:"systeme"`
+		} `json:"jeux"`
+	} `json:"response"`
+}
+
+// Search cerca un gioco per nome (jeuRecherche); systemID 0 = tutti i sistemi.
+func (c *SS) Search(name string, systemID int) ([]SSHit, error) {
+	v := c.base("jeuRecherche.php")
+	v.Set("recherche", name)
+	if systemID > 0 {
+		v.Set("systemeid", strconv.Itoa(systemID))
+	}
+	b, err := c.call("jeuRecherche.php", v)
+	if err != nil {
+		if IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var r ssSearchResp
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, fmt.Errorf("risposta non valida")
+	}
+	var out []SSHit
+	for _, j := range r.Response.Jeux {
+		h := SSHit{ID: j.ID, Name: c.pick(j.Noms, false), System: j.Systeme.Text}
+		if d := c.pick(j.Dates, false); len(d) >= 4 {
+			h.Year = d[:4]
+		}
+		out = append(out, h)
+	}
+	return out, nil
+}
+
+// GameByID legge la scheda completa di un gioco dato il suo id ScreenScraper.
+func (c *SS) GameByID(id string) (*SSGame, error) {
+	v := c.base("jeuInfos.php")
+	v.Set("gameid", id)
+	b, err := c.call("jeuInfos.php", v)
+	if err != nil {
+		return nil, err
+	}
+	var r ssResp
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, fmt.Errorf("risposta non valida")
+	}
+	if r.Response.Jeu.ID == "" {
+		return nil, &SSError{404, "gioco non trovato"}
+	}
+	return c.parseGame(&r), nil
+}

@@ -686,7 +686,8 @@ async function gameEdit(id) {
   $('#gdlg-body').innerHTML = `<h2 style="margin-top:0">${esc(m.name || '')}</h2>
     <div class="hint mono">${esc((m.path || '').split('/').pop())}</div>
     <div class="gpics">${pics}</div>
-    <div class="btns" style="margin:6px 0 10px"><button class="btn" onclick="gamesScrape(['${esc(id)}'])">🖼 Scarica immagini per questo gioco</button></div>
+    <div class="btns" style="margin:6px 0 10px"><button class="btn" onclick="gamesScrape(['${esc(id)}'])">🖼 Scarica immagini per questo gioco</button><button class="btn" onclick="gamesScrapeManual('${esc(sys)}','${esc(id)}','${esc((m.name || '').replace(/'/g, ''))}')" title="Cerca il gioco per nome su ScreenScraper e scegli tu la scheda: per i Ports, gli script e tutto quello che lo scraper automatico non riconosce">🔎 Cerca su ScreenScraper per nome…</button></div>
+    <div id="gsm" hidden></div>
     <div class="gmeta" id="gmeta">
       <label class="full">Nome visualizzato <div class="btns"><input class="in grow" data-k="name" value="${esc(m.name || '')}">${m.suggested_name && m.suggested_name !== m.name ? `<button class="btn sm" title="Proposto: ${esc(m.suggested_name)}" onclick="$('#gmeta [data-k=name]').value='${esc(m.suggested_name).replace(/'/g, '&#39;')}'">Usa "${esc(m.suggested_name)}"</button>` : ''}</div></label>
       <label class="full">Descrizione<textarea class="in" data-k="desc">${esc(m.desc || '')}</textarea></label>
@@ -973,7 +974,7 @@ async function adAct(action, source, name) {
 async function asLoad() {
   try {
     const r = await api('appsetup');
-    const st = r.steam, ch = r.chiaki;
+    const st = r.steam, ch = r.chiaki, sc = r.spacecadet || {};
     const row = (ok, txt) => `<div class="hint" style="font-size:12px">${ok ? '✅' : '⬜'} ${txt}</div>`;
     const psnUrl = 'https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/authorize?service_entity=urn:service-entity:psn&response_type=code&client_id=ba495a24-818c-472b-b12d-ff231c1b5745&redirect_uri=https://remoteplay.dl.playstation.net/remoteplay/redirect&scope=psn:clientapp%20referenceDataService:countryConfig.read%20pushNotification:webSocket.desktop.connect%20sessionManager:remotePlaySession.system.update&request_locale=it_IT&ui=pr&service_logo=ps&layout_type=popup&smcid=remoteplay&prompt=always&PlatformPrivacyWs1=minimal&';
     $('#as-list').innerHTML = `
@@ -983,10 +984,14 @@ async function asLoad() {
       <div class="theme"><div class="b"><div class="n">Chiaki (PS5 Remote Play) ${ch.configured ? '<span class="tag ok">configurato</span>' : ''}</div>
         ${row(ch.installed, 'Chiaki installato (BUA)')}${row(ch.persistent, 'configurazione persistente ai riavvii')}${row(ch.registered, 'PS5 registrata' + (ch.hosts && ch.hosts.length ? ': ' + esc(ch.hosts.join(', ')) : ''))}
         <div class="a"><button class="btn sm primary" onclick="asRun('chiaki')">${ch.configured ? '🔁 Riconfigura' : '⚙ Configura Chiaki'}</button><button class="btn sm" onclick="cpOpen()" title="Mappatura tasti usata solo da Chiaki: tasti degli encoder → ✕ ○ □ △ L1 R1 L2 R2 L3 R3, joystick → croce o levette">🎮 Tasti per Chiaki…</button><a class="btn sm ghost" href="#" onclick="openUrl('${psnUrl}');return false" title="Apre il login PSN nel browser del PC: dopo il login copia l'indirizzo della pagina e incollalo in Chiaki → PSN Login con Ctrl+V nella vista live">🔑 Login PSN (per l'Account ID)</a></div></div></div>`;
+    $('#as-list').innerHTML += `
+      <div class="theme"><div class="b"><div class="n">3D Pinball - Space Cadet ${sc.installed && sc.data ? '<span class="tag ok">installato</span>' : ''}</div>
+        ${row(sc.data, 'file dati di Windows XP in ports/SpaceCadetPinball (si caricano da Aggiungi ROM)')}${row(sc.installed, 'gioco (port SDL2) e launcher in Ports')}${row(sc.l2r2, 'comandi aggiornati: L2/R2 per i flipper')}
+        <div class="a"><button class="btn sm primary" onclick="asRun('spacecadet')">${sc.installed ? '🔁 Aggiorna gioco e comandi' : '⚙ Installa gioco e launcher'}</button></div></div></div>`;
   } catch (e) { $('#as-list').innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
 }
 async function asRun(app) {
-  $('#as-job').hidden = false; $('#as-log').textContent = ''; $('#as-job-title').textContent = app === 'steam' ? 'Configuro Steam' : 'Configuro Chiaki';
+  $('#as-job').hidden = false; $('#as-log').textContent = ''; $('#as-job-title').textContent = app === 'steam' ? 'Configuro Steam' : app === 'spacecadet' ? 'Aggiorno Space Cadet Pinball' : 'Configuro Chiaki';
   try { const r = await api('appsetup', {app}); await pollJob(r.job, bindJobUI('as')); toast('Fatto', 'ok'); }
   catch (e) { toast(e.message, 'err'); }
   asLoad();
@@ -1699,4 +1704,35 @@ async function pwSaveCfg() {
   const body = {action: 'config', host: $('#ha-host').value.trim(), port: +$('#ha-port').value || 1883, user: $('#ha-user').value.trim(), pass: $('#ha-pass').value, topic: $('#ha-power').value.trim() || 'zigbee2mqtt/Cabinato'};
   if (!body.host) return toast('Inserisci l\'IP del broker MQTT', 'err');
   try { await api('power', body); toast('Salvato: la card Alimentazione è nella Dashboard', 'ok'); $('#ha-pass').value = ''; pwLoad(); } catch (e) { toast(e.message, 'err'); }
+}
+
+
+// ---------- scraper manuale (per nome) ----------
+async function gamesScrapeManual(sys, id, name) {
+  const box = $('#gsm'); box.hidden = false;
+  box.innerHTML = `<div class="btns"><input class="in grow" id="gsm-q" value="${esc(name)}" placeholder="nome del gioco"><select class="in" id="gsm-sys"><option value="all">tutti i sistemi</option><option value="${esc(sys)}">solo ${esc(sys)}</option></select><button class="btn primary" onclick="gamesScrapeSearch('${esc(sys)}','${esc(id)}')">Cerca</button></div><div id="gsm-res" class="hint"></div>`;
+  $('#gsm-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gamesScrapeSearch(sys, id); } });
+  gamesScrapeSearch(sys, id);
+}
+async function gamesScrapeSearch(sys, id) {
+  const res = $('#gsm-res'); res.textContent = 'cerco…';
+  try {
+    const r = await api('games/scrape/search', {query: $('#gsm-q').value, system: $('#gsm-sys').value});
+    const hits = r.hits || [];
+    if (!hits.length) { res.textContent = 'Nessun risultato: prova con meno parole o in inglese.'; return; }
+    res.innerHTML = `<table class="tbl"><tbody>${hits.slice(0, 30).map(h => `<tr><td><b>${esc(h.name)}</b></td><td>${esc(h.system || '')}</td><td>${esc(h.year || '')}</td><td style="white-space:nowrap">
+      <button class="btn sm primary" onclick="gamesScrapeApply('${esc(sys)}','${esc(id)}','${esc(h.id)}',false)">Usa questa</button>
+      <button class="btn sm" onclick="gamesScrapeApply('${esc(sys)}','${esc(id)}','${esc(h.id)}',true)" title="Sovrascrive anche copertina, video e descrizione già presenti">Usa e sovrascrivi</button></td></tr>`).join('')}</tbody></table>
+      <div class="hint">Scarica copertina, schermata, logo, video e sfondo, più descrizione e dati.</div>`;
+  } catch (e) { res.textContent = e.message; }
+}
+async function gamesScrapeApply(sys, id, ssid, overwrite) {
+  if ($('#gdlg').open) $('#gdlg').close();
+  $('#g-job').hidden = false; $('#g-log').textContent = '';
+  try {
+    const r = await api('games/scrape/apply', {system: sys, id, ssid, kinds: ['thumbnail', 'image', 'marquee', 'video', 'fanart', 'titleshot'], meta: true, overwrite});
+    const res = await pollJob(r.job, bindJobUI('g'));
+    toast(res.result && res.result.found ? `Fatto: ${res.result.name}` : 'Niente di nuovo: usa "Usa e sovrascrivi"', res.result && res.result.found ? 'ok' : 'err');
+  } catch (e) { toast(e.message, 'err'); }
+  loadGames();
 }

@@ -305,52 +305,9 @@ func (s *Server) ssScrapeGames(j *jobs.Job, cl *scrape.SS, sys string, games []c
 			time.Sleep(400 * time.Millisecond)
 			continue
 		}
-		got := false
-		if meta {
-			m := map[string]any{}
-			set := func(k, v string, cur string) {
-				if v != "" && (overwrite || cur == "") {
-					m[k] = v
-				}
-			}
-			set("desc", info.Desc, g.Desc)
-			set("genre", info.Genre, g.Genre)
-			set("developer", info.Developer, g.Developer)
-			set("publisher", info.Publisher, g.Publisher)
-			set("players", info.Players, g.Players)
-			set("rating", info.Rating, g.Rating)
-			set("releasedate", info.ReleaseDate, g.ReleaseDate)
-			if len(m) > 0 {
-				if _, err := s.gamelistRun(sys, "set", g.Path, m); err != nil {
-					j.Logf("✗ %s: metadati: %v", g.Name, err)
-				} else {
-					got = true
-				}
-			}
-		}
-		for _, kind := range kinds {
-			if !overwrite && hasMedia(g, kind) {
-				continue
-			}
-			md, ok := info.Media[kind]
-			if !ok {
-				continue
-			}
-			data, ct, err := cl.DownloadMedia(md.URL)
-			if err != nil {
-				if scrape.IsQuotaError(err) {
-					j.Logf("✗ %v — mi fermo", err)
-					return map[string]any{"found": found}, err
-				}
-				j.Logf("✗ %s (%s): %v", g.Name, kind, err)
-				continue
-			}
-			if err := s.setGameMediaNoReload(sys, g, kind, data, ct); err != nil {
-				j.Logf("✗ %s (%s): %v", g.Name, kind, err)
-				continue
-			}
-			got = true
-			time.Sleep(250 * time.Millisecond)
+		got, err := s.ssApplyGame(j, cl, sys, g, info, kinds, meta, overwrite)
+		if err != nil {
+			return map[string]any{"found": found}, err
 		}
 		if got {
 			found++
@@ -362,4 +319,140 @@ func (s *Server) ssScrapeGames(j *jobs.Job, cl *scrape.SS, sys string, games []c
 	}
 	_ = s.es.ReloadGames()
 	return map[string]any{"found": found}, nil
+}
+
+// ssApplyGame applica a un gioco metadati e media di una scheda ScreenScraper. Ritorna true se ha
+// scritto qualcosa; err solo per quota esaurita.
+func (s *Server) ssApplyGame(j *jobs.Job, cl *scrape.SS, sys string, g cab.Game, info *scrape.SSGame, kinds []string, meta, overwrite bool) (bool, error) {
+	got := false
+	if meta {
+		m := map[string]any{}
+		set := func(k, v string, cur string) {
+			if v != "" && (overwrite || cur == "") {
+				m[k] = v
+			}
+		}
+		set("desc", info.Desc, g.Desc)
+		set("genre", info.Genre, g.Genre)
+		set("developer", info.Developer, g.Developer)
+		set("publisher", info.Publisher, g.Publisher)
+		set("players", info.Players, g.Players)
+		set("rating", info.Rating, g.Rating)
+		set("releasedate", info.ReleaseDate, g.ReleaseDate)
+		if len(m) > 0 {
+			if _, err := s.gamelistRun(sys, "set", g.Path, m); err != nil {
+				j.Logf("✗ %s: metadati: %v", g.Name, err)
+			} else {
+				got = true
+			}
+		}
+	}
+	for _, kind := range kinds {
+		if !overwrite && hasMedia(g, kind) {
+			continue
+		}
+		md, ok := info.Media[kind]
+		if !ok {
+			continue
+		}
+		data, ct, err := cl.DownloadMedia(md.URL)
+		if err != nil {
+			if scrape.IsQuotaError(err) {
+				j.Logf("✗ %v — mi fermo", err)
+				return got, err
+			}
+			j.Logf("✗ %s (%s): %v", g.Name, kind, err)
+			continue
+		}
+		if err := s.setGameMediaNoReload(sys, g, kind, data, ct); err != nil {
+			j.Logf("✗ %s (%s): %v", g.Name, kind, err)
+			continue
+		}
+		got = true
+		time.Sleep(250 * time.Millisecond)
+	}
+	return got, nil
+}
+
+// ---------- scraper manuale: cerca per nome e applica la scheda scelta ----------
+
+func (s *Server) hGamesScrapeSearch(w http.ResponseWriter, r *http.Request) (any, error) {
+	var req struct {
+		Query  string `json:"query"`
+		System string `json:"system"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Query) == "" {
+		return nil, errors.New("scrivi il nome del gioco")
+	}
+	cl, err := s.ssClient()
+	if err != nil {
+		return nil, err
+	}
+	sid := 0
+	if req.System != "" && req.System != "all" {
+		sid = scrape.SSSystemID[req.System]
+	}
+	hits, err := cl.Search(req.Query, sid)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"hits": hits}, nil
+}
+
+func (s *Server) hGamesScrapeApply(w http.ResponseWriter, r *http.Request) (any, error) {
+	var req struct {
+		System    string   `json:"system"`
+		ID        string   `json:"id"`
+		SSID      string   `json:"ssid"`
+		Kinds     []string `json:"kinds"`
+		Meta      bool     `json:"meta"`
+		Overwrite bool     `json:"overwrite"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return nil, err
+	}
+	if req.System == "" || req.ID == "" || req.SSID == "" {
+		return nil, errors.New("parametri mancanti")
+	}
+	games, err := s.es.Games(req.System)
+	if err != nil {
+		return nil, err
+	}
+	var g *cab.Game
+	for i := range games {
+		if games[i].ID == req.ID {
+			g = &games[i]
+		}
+	}
+	if g == nil {
+		return nil, errors.New("gioco non trovato")
+	}
+	cl, err := s.ssClient()
+	if err != nil {
+		return nil, err
+	}
+	if len(req.Kinds) == 0 {
+		req.Kinds = []string{"thumbnail", "image", "marquee", "video", "fanart"}
+	}
+	j := s.jobs.Start("ScreenScraper (manuale)", func(j *jobs.Job) (any, error) {
+		info, err := cl.GameByID(req.SSID)
+		if err != nil {
+			return nil, err
+		}
+		got, err := s.ssApplyGame(j, cl, req.System, *g, info, req.Kinds, req.Meta, req.Overwrite)
+		if err != nil {
+			return nil, err
+		}
+		if got {
+			j.Logf("✓ %s → %s", g.Name, info.Name)
+		} else {
+			j.Logf("– %s: niente di nuovo (media già presenti? spunta Sovrascrivi)", g.Name)
+		}
+		_ = s.es.ReloadGames()
+		return map[string]any{"found": got, "name": info.Name}, nil
+	})
+	return map[string]any{"job": j.ID}, nil
 }

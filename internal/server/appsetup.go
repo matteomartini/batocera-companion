@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,6 +26,9 @@ echo "@@chiaki"; ls /userdata/system/add-ons/chiaki/Chiaki.AppImage 2>/dev/null 
 echo "@@chiakish"; grep -c 'XDG_CONFIG_HOME=/userdata' /userdata/roms/ports/Chiaki.sh 2>/dev/null
 echo "@@chiakireg"; grep -c 'registered_hosts\|rp_key\|RegistKey' /userdata/system/.config/Chiaki/Chiaki.conf 2>/dev/null
 echo "@@chiakihosts"; grep -oE 'server_nickname=[^\r\n]*' /userdata/system/.config/Chiaki/Chiaki.conf 2>/dev/null | head -3 | sed 's/server_nickname=//'
+echo "@@scbin"; ls /userdata/roms/ports/SpaceCadetPinball/SpaceCadetPinball 2>/dev/null | wc -l
+echo "@@scdat"; ls /userdata/roms/ports/SpaceCadetPinball/ 2>/dev/null | grep -i -c '\.dat$'
+echo "@@scl2"; grep -c 'leftstick' "/userdata/roms/ports/Space Cadet Pinball.sh" 2>/dev/null
 `
 
 func (s *Server) hAppSetup(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -38,8 +42,9 @@ func (s *Server) hAppSetup(w http.ResponseWriter, r *http.Request) (any, error) 
 		st := map[string]any{"installed": n("flatpak") > 0, "rootcheck": strings.TrimSpace(sec["rootcheck"]), "entry": n("essteam") > 0 && n("steamfile") > 0, "launcher": n("launcher") == 2, "padmap": n("override") > 0, "logged_in": n("steamlogin") > 0}
 		st["configured"] = st["installed"].(bool) && st["rootcheck"] == "removed" && st["entry"].(bool) && st["launcher"].(bool) && st["padmap"].(bool)
 		ch := map[string]any{"installed": n("chiaki") > 0, "persistent": n("chiakish") > 0, "registered": n("chiakireg") > 0, "hosts": cab.Lines(sec["chiakihosts"])}
+		sc := map[string]any{"installed": n("scbin") > 0, "data": n("scdat") > 0, "l2r2": n("scl2") > 0}
 		ch["configured"] = ch["installed"].(bool) && ch["persistent"].(bool)
-		return map[string]any{"steam": st, "chiaki": ch}, nil
+		return map[string]any{"steam": st, "chiaki": ch, "spacecadet": sc}, nil
 	}
 	var req struct {
 		App string `json:"app"`
@@ -53,6 +58,12 @@ func (s *Server) hAppSetup(w http.ResponseWriter, r *http.Request) (any, error) 
 		return map[string]any{"job": j.ID}, nil
 	case "chiaki":
 		j := s.jobs.Start("Configurazione Chiaki", func(j *jobs.Job) (any, error) { return nil, s.setupChiaki(j) })
+		return map[string]any{"job": j.ID}, nil
+	case "spacecadet":
+		j := s.jobs.Start("Space Cadet Pinball", func(j *jobs.Job) (any, error) {
+			j.SetProgress(0.2, "Aggiorno gioco, launcher e comandi (i file dati restano)")
+			return nil, s.installSpaceCadet(context.Background(), func(f string, a ...any) { j.Logf(f, a...) })
+		})
 		return map[string]any{"job": j.ID}, nil
 	}
 	return nil, errors.New("app sconosciuta")
