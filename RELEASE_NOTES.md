@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.23.2
+- Scraper per nome: l'id della scheda viene letto anche da campi alternativi della risposta di ScreenScraper; se manca ancora, l'elenco mostra i campi ricevuti.
+
 1.23.1
 - Scraper per nome: corretto "parametri mancanti" su "Usa questa"; in caso di errore il messaggio dice quale dato manca.
 

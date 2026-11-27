@@ -328,6 +328,7 @@ type SSHit struct {
 	Name   string `json:"name"`
 	System string `json:"system"`
 	Year   string `json:"year"`
+	Debug  string `json:"debug,omitempty"`
 }
 
 type ssSearchResp struct {
@@ -361,9 +362,32 @@ func (c *SS) Search(name string, systemID int) ([]SSHit, error) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, fmt.Errorf("risposta non valida")
 	}
+	// id grezzi (il campo puo' chiamarsi o essere formattato diversamente da come lo aspetto)
+	var raw struct {
+		Response struct {
+			Jeux []map[string]any `json:"jeux"`
+		} `json:"response"`
+	}
+	_ = json.Unmarshal(b, &raw)
 	var out []SSHit
-	for _, j := range r.Response.Jeux {
+	for i, j := range r.Response.Jeux {
 		h := SSHit{ID: j.ID.String(), Name: c.pick(j.Noms, false), System: j.Systeme.Text}
+		if h.ID == "" && i < len(raw.Response.Jeux) {
+			m := raw.Response.Jeux[i]
+			for _, k := range []string{"id", "jeuid", "gameid", "idjeu"} {
+				if v, ok := m[k]; ok && v != nil {
+					h.ID = strings.TrimSpace(fmt.Sprint(v))
+					break
+				}
+			}
+			if h.ID == "" {
+				var keys []string
+				for k := range m {
+					keys = append(keys, k)
+				}
+				h.Debug = "campi: " + strings.Join(keys, ", ")
+			}
+		}
 		if d := c.pick(j.Dates, false); len(d) >= 4 {
 			h.Year = d[:4]
 		}

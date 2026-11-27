@@ -1721,7 +1721,7 @@ async function gamesScrapeSearch(sys, id) {
     const hits = r.hits || [];
     if (!hits.length) { res.textContent = 'Nessun risultato: prova con meno parole o in inglese.'; return; }
     window._gsm = {sys, id, hits};
-    res.innerHTML = `<table class="tbl"><tbody>${hits.slice(0, 30).map((h, i) => `<tr><td><b>${esc(h.name)}</b></td><td>${esc(h.system || '')}</td><td>${esc(h.year || '')}</td><td style="white-space:nowrap">
+    res.innerHTML = (hits[0].debug ? `<div class="hint" style="color:var(--err)">ScreenScraper non ha dato l'id della scheda — ${esc(hits[0].debug)}</div>` : '') + `<table class="tbl"><tbody>${hits.slice(0, 30).map((h, i) => `<tr><td><b>${esc(h.name)}</b></td><td>${esc(h.system || '')}</td><td>${esc(h.year || '')}</td><td style="white-space:nowrap">
       <button class="btn sm primary" onclick="gamesScrapeApply(${i},false)">Usa questa</button>
       <button class="btn sm" onclick="gamesScrapeApply(${i},true)" title="Sovrascrive anche copertina, video e descrizione già presenti">Usa e sovrascrivi</button></td></tr>`).join('')}</tbody></table>
       <div class="hint">Scarica copertina, schermata, logo, video e sfondo, più descrizione e dati.</div>`;
