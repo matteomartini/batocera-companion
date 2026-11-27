@@ -44,6 +44,7 @@ print("\n".join(out))')"
 fi
 cd "$d" || exit 1
 echo "$(date): avvio Space Cadet Pinball" >> "$log"
+echo "mappatura pad: ${SDL_GAMECONTROLLERCONFIG:-(nessuna: Batocera non ha passato SDL_GAMECONTROLLERCONFIG)}" >> "$log"
 exec ./SpaceCadetPinball -fullscreen >> "$log" 2>&1
 `
 
