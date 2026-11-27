@@ -27,30 +27,43 @@ export DISPLAY="${DISPLAY:-:0.0}"
 d="` + spaceCadetRoot + `"
 log=/userdata/system/logs/spacecadet.log
 mkdir -p /userdata/system/logs "$XDG_DATA_HOME/SpaceCadetPinball"
-# comandi preimpostati per il cabinato (solo la prima volta: poi valgono le modifiche fatte in gioco, F8)
+# comandi preimpostati per il cabinato (riscritti solo quando il Companion aggiorna i default; poi valgono le modifiche fatte in gioco, F8)
 ini="$XDG_DATA_HOME/SpaceCadetPinball/imgui_pb.ini"
-[ -f "$ini" ] || cp "$d/imgui_pb.ini.default" "$ini" 2>/dev/null
+if [ ! -f "$ini" ] || [ "$d/imgui_pb.ini.default" -nt "$ini" ]; then cp "$d/imgui_pb.ini.default" "$ini" 2>/dev/null; fi
+# L2/R2: Batocera li passa come grilletti (assi) e il gioco ascolta solo i pulsanti: li presento come
+# pulsanti "leftstick"/"rightstick" (7/8), che il gioco vede e che i default qui sopra usano per i flipper
+if [ -n "$SDL_GAMECONTROLLERCONFIG" ]; then
+  export SDL_GAMECONTROLLERCONFIG="$(printf '%s' "$SDL_GAMECONTROLLERCONFIG" | python3 -c '
+import sys, re
+out = []
+for line in sys.stdin.read().splitlines():
+    if "leftstick:" not in line: line = re.sub(r"lefttrigger:(b\d+)", r"leftstick:\1", line)
+    if "rightstick:" not in line: line = re.sub(r"righttrigger:(b\d+)", r"rightstick:\1", line)
+    out.append(line)
+print("\n".join(out))')"
+fi
 cd "$d" || exit 1
 echo "$(date): avvio Space Cadet Pinball" >> "$log"
 exec ./SpaceCadetPinball -fullscreen >> "$log" 2>&1
 `
 
 // Preimpostazioni comandi (formato imgui_pb.ini del gioco):
-// type: 1 tastiera, 3 controller; controller: A=0 B=1 X=2 Y=3 Back=4 Start=6 LB=9 RB=10.
+// type: 1 tastiera, 3 controller; controller: A=0 B=1 X=2 Y=3 Back=4 Start=6 LS=7 RS=8 LB=9 RB=10.
+// L2/R2 (tasti laterali) arrivano come LS/RS grazie al launcher: flipper sinistro/destro.
 // Layout a 6 tasti Street Fighter (Y X L1 / B A R1): colonna sinistra = flipper sinistro,
 // colonna destra = flipper destro, colonna centrale = lancio pallina. Start = nuova partita.
 // Select non esce dal gioco (sarebbe la moneta): si esce con hotkey+start.
 const spaceCadetIni = `[Pinball][Settings]
 FullScreen=1
 Sounds=1
-Left Flipper key 0 type=1
-Left Flipper key 0 input=122
+Left Flipper key 0 type=3
+Left Flipper key 0 input=7
 Left Flipper key 1 type=3
 Left Flipper key 1 input=3
 Left Flipper key 2 type=3
 Left Flipper key 2 input=1
-Right Flipper key 0 type=1
-Right Flipper key 0 input=47
+Right Flipper key 0 type=3
+Right Flipper key 0 input=8
 Right Flipper key 1 type=3
 Right Flipper key 1 input=9
 Right Flipper key 2 type=3

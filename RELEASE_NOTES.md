@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.22.2
+- **Space Cadet Pinball con L2/R2**: Batocera passa L2/R2 come grilletti (assi) e il gioco ascolta solo i pulsanti, quindi non li vedeva. Il launcher ora li presenta come pulsanti e i default usano i tasti laterali per i flipper (sinistro: L2, Y, B; destro: R2, L1, R1). I default aggiornati vengono riapplicati al prossimo avvio; per installarli basta ritrascinare la cartella Pinball in Aggiungi ROM.
+
 1.22.1
 - **Plancia**: sotto ogni pulsante i nomi come li chiede EmulationStation quando configuri il controller: A · SUD, B · EST, X · NORD, Y · OVEST, L1, R1, L2, R2.
 
