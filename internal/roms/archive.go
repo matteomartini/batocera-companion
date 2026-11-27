@@ -108,7 +108,11 @@ func OpenEntry(e Entry) (io.ReadCloser, error) {
 	if e.Archive == "" {
 		return os.Open(e.Path)
 	}
-	switch strings.ToLower(filepath.Ext(e.Archive)) {
+	kind := strings.ToLower(filepath.Ext(e.Archive))
+	if kind != ".zip" && kind != ".7z" && kind != ".rar" && isZipFile(e.Archive) {
+		kind = ".zip" // archivio zip con estensione diversa (es. pacchetti .vpx)
+	}
+	switch kind {
 	case ".zip":
 		zr, err := zip.OpenReader(e.Archive)
 		if err != nil {

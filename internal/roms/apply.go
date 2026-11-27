@@ -276,6 +276,9 @@ func (ap *Applier) doExtract(ctx context.Context, cl *sftp.Client, it *Item, des
 		if len(it.Files) == 1 && !strings.Contains(it.DestName, "/") {
 			dest = path.Join(destDir, it.DestName)
 		}
+		if strings.Contains(e.Name, "/") { // voce con sottocartella (es. pinmame/roms/x.zip)
+			_ = cl.MkdirAll(path.Dir(dest))
+		}
 		base := done
 		err = cab.UploadWith(ctx, cl, tmp, dest, func(d, _ int64) { prog(base+d, 0) })
 		os.Remove(tmp)

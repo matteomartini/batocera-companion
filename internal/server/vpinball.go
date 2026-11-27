@@ -65,21 +65,32 @@ func (s *Server) vpinballApply(apply []string) (any, error) {
 	}
 	var cmds []string
 	n := 0
+	unz := 0
 	for _, a := range apply {
 		src, dst, ok := strings.Cut(a, ">")
+		if ok && dst == "unzip" && okSrc(src) && strings.HasSuffix(strings.ToLower(src), ".vpx") {
+			// pacchetto zip travestito da .vpx: estraggo nella cartella del tavolo, ROM in pinmame/roms, via il finto .vpx
+			dir := strings.TrimSuffix(src, "/"+pathBase(src))
+			cmds = append(cmds, "cd "+q(dir)+" && mv -f "+q(src)+" "+q(src+".pkg.zip")+" && unzip -o -q "+q(src+".pkg.zip")+" -d . && rm -f "+q(src+".pkg.zip")+" && mkdir -p pinmame/roms && for z in *.zip; do [ -f \"$z\" ] && mv -f \"$z\" pinmame/roms/; done; true")
+			unz++
+			continue
+		}
 		if !ok || !okSrc(src) || !okSrc(dst) || !strings.HasSuffix(src, ".zip") || !strings.HasSuffix(dst, "/roms") {
 			continue
 		}
 		cmds = append(cmds, "mkdir -p "+q(dst)+" && mv -f "+q(src)+" "+q(dst+"/")+"; rmdir "+q(strings.TrimSuffix(src, "/"+pathBase(src)))+" 2>/dev/null; true")
 		n++
 	}
-	if n > 0 {
-		if _, err := s.ssh.RunTimeout(strings.Join(cmds, "\n"), 5*time.Minute); err != nil {
+	if n > 0 || unz > 0 {
+		if _, err := s.ssh.RunTimeout(strings.Join(cmds, "\n"), 20*time.Minute); err != nil {
 			return nil, err
 		}
 	}
 	_ = s.vpxGlobalPinmame(context.Background(), func(string, ...any) {})
-	return map[string]any{"applied": 0, "moved": n}, nil
+	if unz > 0 {
+		_ = s.es.ReloadGames()
+	}
+	return map[string]any{"applied": 0, "moved": n, "unzipped": unz}, nil
 }
 
 func pathBase(p string) string {

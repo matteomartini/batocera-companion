@@ -1,9 +1,11 @@
 package roms
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -1200,23 +1202,7 @@ func VpxRom(vpx string) string {
 		return ""
 	}
 	defer f.Close()
-	buf := make([]byte, 4<<20)
-	var carry []byte
-	for {
-		n, err := f.Read(buf)
-		if n > 0 {
-			chunk := append(carry, buf[:n]...)
-			if m := reVpxRom.FindSubmatch(chunk); m != nil {
-				return strings.ToLower(string(m[1]))
-			}
-			if len(chunk) > 64 {
-				carry = append([]byte{}, chunk[len(chunk)-64:]...)
-			}
-		}
-		if err != nil {
-			return ""
-		}
-	}
+	return vpxRomFromReader(f)
 }
 
 // pinball: set riconosciuto dal DAT di MAME come flipper → ROM PinMAME per vpinball.
@@ -1259,6 +1245,59 @@ func (a *Analyzer) pinballLayout(items []*Item) {
 			continue
 		}
 		switch {
+		case it.ext == ".vpx" && isZipFile(it.Sources[0]):
+			// ".vpx" che in realta' e' uno zip (pacchetti TorrentZip): dentro ci sono il vero tavolo,
+			// gli accessori e a volte la ROM PinMAME
+			stem := strings.TrimSuffix(filepath.Base(it.Sources[0]), filepath.Ext(it.Sources[0]))
+			ents, err := listZip(it.Sources[0])
+			if err != nil || len(ents) == 0 {
+				it.Skip = true
+				it.Confidence = "red"
+				it.Notes = []string{"il file .vpx e' uno zip, ma non si riesce a leggerlo"}
+				continue
+			}
+			it.Kind = "vpx"
+			it.System = "vpinball"
+			it.SystemOptions = []string{"vpinball"}
+			it.Action = "extract"
+			it.Confidence = "green"
+			it.Notes = nil
+			it.Files = nil
+			realVpx := ""
+			var romZips []string
+			for _, e := range ents {
+				if strings.HasPrefix(e.Inner, "__MACOSX") {
+					continue
+				}
+				le := strings.ToLower(e.Name)
+				switch {
+				case strings.HasSuffix(le, ".vpx") && realVpx == "":
+					realVpx = e.Name
+				case strings.HasSuffix(le, ".zip"):
+					e.Name = "pinmame/roms/" + e.Name // ROM PinMAME inclusa nel pacchetto
+					romZips = append(romZips, strings.TrimSuffix(filepath.Base(le), ".zip"))
+				}
+				it.Files = append(it.Files, e)
+			}
+			if realVpx == "" {
+				it.Skip = true
+				it.Confidence = "red"
+				it.Notes = []string{"il file .vpx e' uno zip senza nessun tavolo .vpx dentro"}
+				continue
+			}
+			it.DestName = stem + "/" + realVpx
+			it.Notes = appendOnce(it.Notes, fmt.Sprintf("il file .vpx e' in realta' uno zip (pacchetto): estraggo il tavolo vero (%s) e gli altri %d file in vpinball/%s/", realVpx, len(it.Files)-1, stem))
+			if rom := vpxRomFromZip(it.Sources[0], realVpx); rom != "" {
+				romTable[rom] = stem
+				it.Notes = appendOnce(it.Notes, "usa la ROM PinMAME "+rom+".zip")
+				for _, rz := range romZips {
+					if rz == rom {
+						it.Notes = appendOnce(it.Notes, "la ROM "+rom+".zip e' inclusa nel pacchetto: va in pinmame/roms/")
+					}
+				}
+			} else {
+				it.Notes = appendOnce(it.Notes, "tavolo senza ROM PinMAME (o script non leggibile)")
+			}
 		case it.ext == ".vpx":
 			stem := strings.TrimSuffix(filepath.Base(it.Sources[0]), filepath.Ext(it.Sources[0]))
 			it.Kind = "vpx"
@@ -1330,6 +1369,61 @@ func (a *Analyzer) pinballLayout(items []*Item) {
 		} else {
 			it.DestName = "pinmame/roms/" + it.SetName + ".zip"
 			it.Notes = appendOnce(it.Notes, "nessun tavolo trovato che usi questa ROM: copiata in vpinball/pinmame/roms/, la cartella PinMAME comune che il Companion imposta in VPinballX.ini (vale per tutti i tavoli)")
+		}
+	}
+}
+
+// isZipFile: il file inizia con la firma zip "PK\x03\x04" (vale per i .vpx che sono pacchetti).
+func isZipFile(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var sig [4]byte
+	if _, err := io.ReadFull(f, sig[:]); err != nil {
+		return false
+	}
+	return sig == [4]byte{'P', 'K', 3, 4}
+}
+
+// vpxRomFromZip legge lo script del tavolo .vpx contenuto in uno zip e ne ricava la ROM PinMAME.
+func vpxRomFromZip(zipPath, inner string) string {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return ""
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if filepath.Base(f.Name) != inner {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return ""
+		}
+		defer rc.Close()
+		return vpxRomFromReader(rc)
+	}
+	return ""
+}
+
+func vpxRomFromReader(r io.Reader) string {
+	buf := make([]byte, 4<<20)
+	var carry []byte
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			chunk := append(carry, buf[:n]...)
+			if m := reVpxRom.FindSubmatch(chunk); m != nil {
+				return strings.ToLower(string(m[1]))
+			}
+			if len(chunk) > 64 {
+				carry = append([]byte{}, chunk[len(chunk)-64:]...)
+			}
+		}
+		if err != nil {
+			return ""
 		}
 	}
 }

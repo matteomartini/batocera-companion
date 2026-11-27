@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.24.0
+- **Tavoli Visual Pinball "pacchetto"**: certi download sono ZIP rinominati `.vpx` (TorrentZip) con dentro il tavolo vero, gli accessori e a volte la ROM: Visual Pinball non li apre. Aggiungi ROM ora li riconosce dalla firma del file, estrae il tavolo e gli accessori nella cartella del tavolo e la ROM in `pinmame/roms/`, e legge il nome della ROM dal tavolo dentro lo zip. Giochi → vpinball → "Controlla tutti i set" segnala i pacchetti già sul cabinato ("pacchetto zip, non un tavolo") e "Applica" li estrae sul posto.
+
 1.23.6
 - **Plancia**: pulsanti disposti per numero di tasto dell'encoder (0 1 2 sopra, 3 4 5 sotto: l'ordine fisico del cablaggio) con il ruolo ES sotto ciascuno; i tasti oltre il 5 (select, start, hotkey, laterali) in fila sotto, "libero" se ES non li conosce. Giocatore 1 e 2 nell'ordine assegnato in EmulationStation (Impostazioni controller), con l'etichetta "P1 in ES"; "Scambia" ora inverte davvero i pannelli.
 

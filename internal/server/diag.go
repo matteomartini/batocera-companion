@@ -631,7 +631,13 @@ for dp, dn, fn in os.walk(root):
     if dp.count('/')-root.count('/')>1: continue
     for n in fn:
         if not n.lower().endswith('.vpx'): continue
-        p=os.path.join(dp,n); rom=rom_of(p); rel=os.path.relpath(p,root)
+        p=os.path.join(dp,n); rel=os.path.relpath(p,root)
+        try:
+            with open(p,'rb') as f: zipped = f.read(4)==b'PK\x03\x04'
+        except Exception: zipped=False
+        if zipped:
+            out.append({"table":rel,"rom":"","zip":"","wrong":"","dst":os.path.join(dp,'pinmame','roms'),"crcs":[],"zipped":True,"path":p}); continue
+        rom=rom_of(p)
         found=''; crcs=[]; wrong=''
         if rom:
             good=[os.path.join(dp,'pinmame','roms')]
@@ -661,8 +667,9 @@ func (s *Server) diagVpinball() (any, error) {
 		var scan struct {
 			Glob   string
 			Tables []struct {
-				Table, Rom, Zip, Wrong, Dst string
-				Crcs                        []float64
+				Table, Rom, Zip, Wrong, Dst, Path string
+				Crcs                              []float64
+				Zipped                            bool
 			}
 		}
 		if err := json.Unmarshal([]byte(strings.TrimSpace(lastLine(res.Stdout))), &scan); err != nil {
@@ -686,6 +693,11 @@ func (s *Server) diagVpinball() (any, error) {
 		for _, t := range tables {
 			rw := row{File: t.Table, Current: "vpinball", Cores: map[string]string{}}
 			switch {
+			case t.Zipped:
+				rw.Status = "zipped"
+				rw.Src, rw.Dst = t.Path, "unzip"
+				rw.Best = "estrai il pacchetto"
+				rw.Note = "questo .vpx e' in realta' uno ZIP (pacchetto): Visual Pinball non puo' aprirlo. \"Applica\" lo estrae nella cartella del tavolo (tavolo vero, accessori, eventuale ROM in pinmame/roms) e toglie il finto .vpx"
 			case t.Rom == "":
 				rw.Status, rw.Note = "ok", "tavolo senza ROM PinMAME (o script non leggibile)"
 			case t.Zip == "" && t.Wrong != "":
