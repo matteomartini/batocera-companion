@@ -415,7 +415,7 @@ func (s *Server) hGamesScrapeApply(w http.ResponseWriter, r *http.Request) (any,
 		return nil, err
 	}
 	if req.System == "" || req.ID == "" || req.SSID == "" {
-		return nil, errors.New("parametri mancanti")
+		return nil, fmt.Errorf("parametri mancanti (sistema=%q gioco=%q scheda=%q)", req.System, req.ID, req.SSID)
 	}
 	games, err := s.es.Games(req.System)
 	if err != nil {

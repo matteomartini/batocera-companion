@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.23.1
+- Scraper per nome: corretto "parametri mancanti" su "Usa questa"; in caso di errore il messaggio dice quale dato manca.
+
 1.23.0
 - **Scraper manuale per nome**: nei dettagli di un gioco, "🔎 Cerca su ScreenScraper per nome…" cerca la scheda (su tutti i sistemi o solo quello corrente), tu scegli quella giusta e il Companion scarica copertina, schermata, logo, video, sfondo e descrizione. Serve per i Ports (Space Cadet Pinball, Chiaki, Steam…) e per tutto ciò che lo scraper automatico non riconosce dal file.
 - **Add-on → 3D Pinball - Space Cadet**: nuova scheda con "Aggiorna gioco e comandi": riscrive binario, launcher e comandi preimpostati senza toccare i file dati già sul cabinato (niente da ritrascinare).

@@ -1720,13 +1720,17 @@ async function gamesScrapeSearch(sys, id) {
     const r = await api('games/scrape/search', {query: $('#gsm-q').value, system: $('#gsm-sys').value});
     const hits = r.hits || [];
     if (!hits.length) { res.textContent = 'Nessun risultato: prova con meno parole o in inglese.'; return; }
-    res.innerHTML = `<table class="tbl"><tbody>${hits.slice(0, 30).map(h => `<tr><td><b>${esc(h.name)}</b></td><td>${esc(h.system || '')}</td><td>${esc(h.year || '')}</td><td style="white-space:nowrap">
-      <button class="btn sm primary" onclick="gamesScrapeApply('${esc(sys)}','${esc(id)}','${esc(h.id)}',false)">Usa questa</button>
-      <button class="btn sm" onclick="gamesScrapeApply('${esc(sys)}','${esc(id)}','${esc(h.id)}',true)" title="Sovrascrive anche copertina, video e descrizione già presenti">Usa e sovrascrivi</button></td></tr>`).join('')}</tbody></table>
+    window._gsm = {sys, id, hits};
+    res.innerHTML = `<table class="tbl"><tbody>${hits.slice(0, 30).map((h, i) => `<tr><td><b>${esc(h.name)}</b></td><td>${esc(h.system || '')}</td><td>${esc(h.year || '')}</td><td style="white-space:nowrap">
+      <button class="btn sm primary" onclick="gamesScrapeApply(${i},false)">Usa questa</button>
+      <button class="btn sm" onclick="gamesScrapeApply(${i},true)" title="Sovrascrive anche copertina, video e descrizione già presenti">Usa e sovrascrivi</button></td></tr>`).join('')}</tbody></table>
       <div class="hint">Scarica copertina, schermata, logo, video e sfondo, più descrizione e dati.</div>`;
   } catch (e) { res.textContent = e.message; }
 }
-async function gamesScrapeApply(sys, id, ssid, overwrite) {
+async function gamesScrapeApply(i, overwrite) {
+  const g = window._gsm || {}; const h = (g.hits || [])[i] || {};
+  const sys = g.sys, id = g.id, ssid = String(h.id || '');
+  if (!sys || !id || !ssid) return toast(`Dati mancanti (sistema=${sys || '?'} gioco=${id || '?'} scheda=${ssid || '?'})`, 'err');
   if ($('#gdlg').open) $('#gdlg').close();
   $('#g-job').hidden = false; $('#g-log').textContent = '';
   try {

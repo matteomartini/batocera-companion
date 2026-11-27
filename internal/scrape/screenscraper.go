@@ -333,7 +333,7 @@ type SSHit struct {
 type ssSearchResp struct {
 	Response struct {
 		Jeux []struct {
-			ID      string   `json:"id"`
+			ID      json.Number `json:"id"`
 			Noms    []ssText `json:"noms"`
 			Dates   []ssText `json:"dates"`
 			Systeme struct {
@@ -363,7 +363,7 @@ func (c *SS) Search(name string, systemID int) ([]SSHit, error) {
 	}
 	var out []SSHit
 	for _, j := range r.Response.Jeux {
-		h := SSHit{ID: j.ID, Name: c.pick(j.Noms, false), System: j.Systeme.Text}
+		h := SSHit{ID: j.ID.String(), Name: c.pick(j.Noms, false), System: j.Systeme.Text}
 		if d := c.pick(j.Dates, false); len(d) >= 4 {
 			h.Year = d[:4]
 		}
