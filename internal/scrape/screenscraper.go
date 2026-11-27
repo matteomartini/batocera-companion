@@ -335,8 +335,8 @@ type ssSearchResp struct {
 	Response struct {
 		Jeux []struct {
 			ID      json.Number `json:"id"`
-			Noms    []ssText `json:"noms"`
-			Dates   []ssText `json:"dates"`
+			Noms    []ssText    `json:"noms"`
+			Dates   []ssText    `json:"dates"`
 			Systeme struct {
 				Text string `json:"text"`
 			} `json:"systeme"`

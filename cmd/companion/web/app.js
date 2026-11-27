@@ -1394,7 +1394,7 @@ async function plStart() {
     if (f[0] === 'ready') { if (f[1] === '0') { $('#pl-st').textContent = '❌ nessun joystick trovato sul cabinato (controlla l\'encoder USB)'; es.close(); plES = null; } else $('#pl-st').textContent = '✅ in ascolto su ' + f[1] + ' joystick: premi i comandi sul cabinato'; return; }
     if (f[0] === 'ping') return;
     if (f[0] === 'err' || f[0] === 'gone') { $('#pl-st').textContent = '⚠️ ' + ev.data; return; }
-    const di = +f[1], pi = plPlayer(di), cfg = plCfgFor(plDevs[di]);
+    const di = +f[1], pi = di, cfg = plCfgFor(plDevs[di]);
     if (f[0] === 'b') {
       plLight(pi, 'b' + f[2], +f[3] === 1);
       const role = cfg['button:' + f[2]]; if (role) plDir(pi, role, +f[3] === 1);
@@ -1418,7 +1418,6 @@ async function plStart() {
   es.onerror = () => { $('#pl-st').textContent = '⚠️ collegamento interrotto'; };
 }
 function plStop() { if (plES) { plES.close(); plES = null; } }
-function plPlayer(i) { return plData && plData.swap ? (i === 0 ? 1 : i === 1 ? 0 : i) : i; }
 // accende la freccia della leva per un ruolo ES (up/down/left/right, joystick1up/joystick1left = stessa leva)
 function plDir(p, role, on) {
   const m = {up: 'up', down: 'down', left: 'left', right: 'right', joystick1up: 'up', joystick1down: 'down', joystick1left: 'left', joystick1right: 'right'};
@@ -1437,38 +1436,39 @@ function plCfgObj(dev) {
   return esList.find(c => norm(c.name) === norm(dev.name)) || esList.find(c => c.vidpid && dev.id && c.vidpid === String(dev.id).toLowerCase()) || esList[0] || null;
 }
 function plCfgFor(dev) { const c = plCfgObj(dev); return c ? c.map : {}; }
+function plOrder() {
+  // ordine dei pannelli: giocatore 1 e 2 come assegnati in EmulationStation (es_settings), altrimenti ordine dei dispositivi; "Scambia" inverte
+  const devs = plDevs.filter(Boolean);
+  let order = devs.map((_, i) => i);
+  const pl = (plData && plData.players) || {};
+  if (devs.length >= 2 && (pl[devs[0].event] || pl[devs[1].event])) order.sort((i, j) => (pl[devs[i].event] || 9) - (pl[devs[j].event] || 9));
+  if (plData && plData.swap && order.length >= 2) order = [order[1], order[0], ...order.slice(2)];
+  return order;
+}
 function plRender() {
   const d = plData, board = $('#pl-board'); if (!d) return;
-  const devs = plDevs.filter(Boolean).length ? plDevs.filter(Boolean) : (d.devices && d.devices.length ? d.devices : [{name: 'nessun joystick', event: ''}]);
-  const html = devs.slice(0, 2).map((dev, i) => {
-    const p = plPlayer(i);
+  const devs = plDevs.filter(Boolean);
+  if (!devs.length) { board.innerHTML = `<div class="pl-player"><h3>${esc((d.devices && d.devices.length) ? 'in attesa degli eventi…' : 'nessun joystick')}</h3></div>`; return; }
+  const html = plOrder().slice(0, 2).map((di, pos) => {
+    const dev = devs[di], p = di;   // gli id degli elementi usano l'indice del dispositivo: le luci arrivano con lo stesso indice
     const esCfg = plCfgObj(dev), m = esCfg ? esCfg.map : {};
     const roleOf = {}; Object.keys(m).forEach(k => { if (k.startsWith('button:')) roleOf[+k.slice(7)] = m[k]; });
-    const idxOf = role => { const e = Object.entries(roleOf).find(([, r]) => r === role || r === role + '+hotkey' || r === 'hotkey+' + role); return e ? +e[0] : -1; };
-    const lab = (role, idx) => d.labels[role] || d.defaults[role] || ('BTN ' + idx);
-    const used = new Set();
-    const btn = (role, cls) => {
-      const idx = idxOf(role); if (idx < 0) return `<div class="pl-btn missing ${cls || ''}" title="non configurato in EmulationStation"><span class="lab">${esc(d.defaults[role] || role)}</span><span class="es">${esc(ES_LABEL[role] || role)} · manca</span></div>`;
-      used.add(idx); const r = roleOf[idx] || role;
-      return `<div class="pl-btn ${cls || ''}" id="pl-p${p}-b${idx}" data-k="${role}" onclick="plRename('${role}')"><span class="ok">✓</span><span class="lab">${esc(lab(role, idx))}</span><span class="es">${esc(ES_LABEL[r] || r.toUpperCase())} · ${idx}</span></div>`;
-    };
-    const std = ['y', 'x', 'pageup', 'b', 'a', 'pagedown', 'select', 'start', 'hotkey', 'l2', 'r2', 'l3', 'r3'];
-    const extra = Object.keys(roleOf).map(Number).filter(idx => !used.has(idx) && !std.some(r => roleOf[idx] === r || roleOf[idx] === r + '+hotkey'));
-    const top = btn('y') + btn('x') + btn('pageup'), bottom = btn('b') + btn('a') + btn('pagedown');
-    const sys = ['select', 'start', 'hotkey', 'l2', 'r2', 'l3', 'r3'].filter(r => idxOf(r) >= 0 && !(r === 'hotkey' && (roleOf[idxOf('select')] || '').includes('hotkey'))).map(r => btn(r)).join('')
-      + extra.map(idx => `<div class="pl-btn" id="pl-p${p}-b${idx}"><span class="ok">✓</span><span class="lab">${esc(d.labels[String(idx)] || ('BTN ' + idx))}</span><span class="es">${esc(String(roleOf[idx]).toUpperCase())} · ${idx}</span></div>`).join('');
-    // pulsanti che l'encoder ha ma ES non conosce: utili per vedere cosa manda un tasto nuovo
-    const unknown = []; for (let k = 0; k < (dev.nbtn || 0); k++) if (!(k in roleOf)) unknown.push(k);
-    const unk = unknown.map(k => `<div class="pl-btn missing" id="pl-p${p}-b${k}"><span class="ok">✓</span><span class="lab">libero</span><span class="es">tasto ${k}</span></div>`).join('');
+    const nbtn = Math.max(dev.nbtn || 0, ...Object.keys(roleOf).map(Number).map(x => x + 1), 6);
+    const lab = k => d.labels[String(k)] || ('BTN ' + k);
+    const roleTxt = k => { const r = roleOf[k]; return r ? (ES_LABEL[r] || r.toUpperCase()) : 'libero'; };
+    const btn = k => `<div class="pl-btn ${roleOf[k] ? '' : 'missing'}" id="pl-p${p}-b${k}" data-k="${k}" onclick="plRename(${k})" title="tasto ${k} dell'encoder"><span class="ok">✓</span><span class="lab">${esc(lab(k))}</span><span class="es">${esc(roleTxt(k))} · ${k}</span></div>`;
+    const main = [0, 1, 2, 3, 4, 5].map(btn).join('');
+    const rest = []; for (let k = 6; k < nbtn; k++) rest.push(btn(k));
     const noEs = !Object.keys(roleOf).length;
-    const esInfo = esCfg ? `config ES: ${esc(esCfg.name)}${esCfg.vidpid ? ' (' + esc(esCfg.vidpid) + ')' : ''}` : 'nessuna config ES';
-    return `<div class="pl-player"><h3>Giocatore ${p + 1} <span class="dev">${esc(dev.name)} ${esc(dev.event || '')}${dev.phys ? ' · ' + esc(dev.phys) : ''} · ${esInfo}</span></h3>
-      ${noEs ? '<p class="hint">Controller non configurato in EmulationStation: la plancia non sa quale pulsante è quale. Configuralo da ES (Menu → Impostazioni controller) e ricarica.</p>' : ''}
+    const esInfo = esCfg ? `config ES: ${esc(esCfg.name)}` : 'nessuna config ES';
+    const pl = (d.players || {})[dev.event];
+    return `<div class="pl-player"><h3>Giocatore ${pos + 1}${pl ? ` <span class="tag ok">P${pl} in ES</span>` : ''} <span class="dev">${esc(dev.name)} ${esc(dev.event || '')}${dev.phys ? ' · ' + esc(dev.phys) : ''} · ${esInfo}</span></h3>
+      ${noEs ? '<p class="hint">Controller non configurato in EmulationStation: sotto i pulsanti non posso scrivere A/B/X/Y. Configuralo da ES (Menu → Impostazioni controller) e ricarica.</p>' : ''}
       <div class="pl-row">
         <div class="pl-stick"><div></div><div class="d" id="pl-p${p}-up">▲</div><div></div><div class="d" id="pl-p${p}-left">◀</div><div class="c"></div><div class="d" id="pl-p${p}-right">▶</div><div></div><div class="d" id="pl-p${p}-down">▼</div><div></div></div>
-        <div class="pl-btns">${top}${bottom}</div>
+        <div class="pl-btns">${main}</div>
       </div>
-      <div class="pl-sys">${sys}${unk}</div>
+      <div class="pl-sys">${rest.join('')}</div>
     </div>`;
   }).join('');
   board.innerHTML = html;
@@ -1478,12 +1478,12 @@ function plEditToggle() { plEdit = !plEdit; $('#pl-board').classList.toggle('edi
 async function plRename(k) {
   if (!plEdit) return;
   const cur = plData.labels[String(k)] || '';
-  const v = prompt('Scritta sulla plancia per il pulsante ' + (ES_LABEL[k] || k) + ':', cur); if (v === null) return;
+  const v = prompt('Scritta sulla plancia per il tasto ' + k + ' dell\'encoder:', cur); if (v === null) return;
   const labels = Object.assign({}, plData.labels);
   if (v.trim()) labels[String(k)] = v.trim(); else { delete labels[String(k)]; if (plData.defaults[String(k)]) labels[String(k)] = plData.defaults[String(k)]; }
   try { await api('plancia', {labels}); plData.labels = labels; plRender(); toast('Salvato', 'ok'); } catch (e) { toast(e.message, 'err'); }
 }
-async function plSwap(on) { try { await api('plancia', {swap: on}); plData.swap = on; } catch (e) { toast(e.message, 'err'); } }
+async function plSwap(on) { try { await api('plancia', {swap: on}); plData.swap = on; plRender(); } catch (e) { toast(e.message, 'err'); } }
 function plResetTest() { plTested.clear(); $$('#pl-board .tested').forEach(e => e.classList.remove('tested')); }
 
 // ---------- MODALITÀ STOCK ----------

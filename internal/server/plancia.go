@@ -17,9 +17,10 @@ import (
 
 // Le scritte sono per ruolo di EmulationStation (y x pageup / b a pagedown ...): così la plancia
 // segue la configurazione del controller, qualunque porta dell'encoder usi ogni pulsante.
+// Le scritte sono per numero di tasto dell'encoder (l'ordine fisico di cablaggio: 0 1 2 in alto, 3 4 5 in basso);
+// sotto ogni pulsante c'e' il ruolo che EmulationStation gli ha dato.
 var planciaDefaultLabels = map[string]string{
-	"y": "JAB", "x": "STRONG", "pageup": "FIERCE", "b": "SHORT", "a": "FORWARD", "pagedown": "ROUNDHOUSE",
-	"select": "SELECT", "start": "START", "hotkey": "HOTKEY", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3",
+	"0": "JAB", "1": "STRONG", "2": "FIERCE", "3": "SHORT", "4": "FORWARD", "5": "ROUNDHOUSE",
 }
 
 // Lettore eventi evdev in python puro: calcola l'indice SDL dei pulsanti enumerando i bit EV_KEY
@@ -181,7 +182,21 @@ func (s *Server) hPlancia(w http.ResponseWriter, r *http.Request) (any, error) {
 	for k, v := range s.cfg.PlanciaLabels {
 		labels[k] = v
 	}
-	return map[string]any{"devices": devs, "labels": labels, "defaults": planciaDefaultLabels, "es": s.planciaESMap(), "swap": s.cfg.PlanciaSwap}, nil
+	// giocatori come li ha assegnati EmulationStation (Impostazioni controller): INPUT P1PATH = /dev/input/eventN
+	players := map[string]int{}
+	if res, err := s.ssh.RunTimeout(`grep -o 'INPUT P[0-9]PATH" value="[^"]*"' /userdata/system/configs/emulationstation/es_settings.cfg 2>/dev/null`, 15*time.Second); err == nil {
+		for _, l := range cab.Lines(res.Stdout) {
+			var n int
+			var path string
+			if _, err := fmt.Sscanf(l, "INPUT P%dPATH\" value=\"%s", &n, &path); err == nil {
+				path = strings.Trim(path, `"`)
+				if i := strings.LastIndex(path, "/"); i >= 0 {
+					players[path[i+1:]] = n
+				}
+			}
+		}
+	}
+	return map[string]any{"devices": devs, "labels": labels, "defaults": planciaDefaultLabels, "es": s.planciaESMap(), "swap": s.cfg.PlanciaSwap, "players": players}, nil
 }
 
 func (s *Server) hPlanciaEvents(w http.ResponseWriter, r *http.Request) {

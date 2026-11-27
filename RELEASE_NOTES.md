@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.23.6
+- **Plancia**: pulsanti disposti per numero di tasto dell'encoder (0 1 2 sopra, 3 4 5 sotto: l'ordine fisico del cablaggio) con il ruolo ES sotto ciascuno; i tasti oltre il 5 (select, start, hotkey, laterali) in fila sotto, "libero" se ES non li conosce. Giocatore 1 e 2 nell'ordine assegnato in EmulationStation (Impostazioni controller), con l'etichetta "P1 in ES"; "Scambia" ora inverte davvero i pannelli.
+
 1.23.5
 - **Plancia rifatta sul serio**: i pannelli vengono dagli stessi dispositivi che il lettore eventi sta ascoltando (niente più scambi tra giocatore 1 e 2), le direzioni della leva seguono la configurazione di EmulationStation (su/giù/sinistra/destra come li ha registrati ES, anche se la leva è cablata al contrario), ogni pulsante mostra il suo numero di tasto e i tasti che l'encoder ha ma ES non conosce compaiono come "libero · tasto N", così si vede cosa manda un tasto nuovo.
 
