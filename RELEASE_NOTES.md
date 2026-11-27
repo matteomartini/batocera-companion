@@ -1,5 +1,8 @@
 Installer Windows (NSIS) dentro lo zip: estrai e lancia il setup.
 
+1.23.4
+- Space Cadet: "Aggiorna gioco e comandi" funziona anche con il gioco aperto (prima: "Text file busy").
+
 1.23.3
 - Space Cadet: il launcher scrive nel log (/userdata/system/logs/spacecadet.log) la mappatura del pad usata, per diagnosticare i tasti che il gioco non vede.
 

@@ -101,8 +101,16 @@ func (s *Server) installSpaceCadet(ctx context.Context, logf func(string, ...any
 	if _, err := s.ssh.RunCtx(ctx, "mkdir -p "+spaceCadetRoot, time.Minute); err != nil {
 		return err
 	}
-	if err := s.ssh.UploadBytes(spaceCadetRoot+"/SpaceCadetPinball", bin, 0o755); err != nil {
+	// scrivo su un file nuovo e lo rinomino: se il gioco e' aperto, il binario in uso non si puo' sovrascrivere
+	// ("Text file busy") ma si puo' sostituire
+	if err := s.ssh.UploadBytes(spaceCadetRoot+"/SpaceCadetPinball.new", bin, 0o755); err != nil {
 		return fmt.Errorf("binario: %v", err)
+	}
+	if _, err := s.ssh.RunCtx(ctx, "mv -f "+spaceCadetRoot+"/SpaceCadetPinball.new "+spaceCadetRoot+"/SpaceCadetPinball", time.Minute); err != nil {
+		return fmt.Errorf("binario: %v", err)
+	}
+	if res, _ := s.ssh.RunCtx(ctx, "pgrep -f '[S]paceCadetPinball' >/dev/null && echo RUNNING", 20*time.Second); res != nil && strings.Contains(res.Stdout, "RUNNING") {
+		logf("⚠ Space Cadet è aperto adesso: le novità valgono dal prossimo avvio (chiudilo e riaprilo)")
 	}
 	if lic != nil {
 		_ = s.ssh.UploadBytes(spaceCadetRoot+"/LICENSE-SpaceCadetPinball.txt", lic, 0o644)
